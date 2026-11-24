@@ -680,5 +680,18 @@ window.I18N_DICT.ru={
 "−# %": "−# %",
 "# %": "# %",
 "+# %": "+# %",
-"# % → # %": "# %1 → # %2"
+"# % → # %": "# %1 → # %2",
+"Chronicle saved": "Летопись сохранена",
+"Keep the chronicle as a file": "Сохранить летопись в файл",
+"Season # begins from it": "Сезон # начнётся с неё",
+"Chronicle saved: Season # won on % #.": "Летопись сохранена: сезон #1 выигран: %1 #2.",
+"Season # will begin from it.": "Сезон # начнётся с неё.",
+"Chronicle saved to a file": "Летопись сохранена в файл",
+"# % to the first snow.": "# % до первого снега.",
+"Gentle": "Мягко",
+"Standard": "Обычно",
+"Hard": "Сурово",
+"Sixteen days, kinder prices, the roads in the same order every time": "Шестнадцать дней, цены помягче, дороги всегда в одном порядке",
+"Fourteen days, prices and roads rolled every season": "Четырнадцать дней, цены и дороги меняются каждый сезон",
+"Fourteen days, harsher prices, trouble at home more often": "Четырнадцать дней, цены построже, беды дома случаются чаще"
 };

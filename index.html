@@ -22,8 +22,9 @@
   #party a.pulse{animation:pulse 1.6s ease-out}
   @keyframes pulse{0%{transform:scale(1.35);color:#ffd27a;text-shadow:0 0 14px #ffb060}100%{transform:scale(1)}}
   #party a{display:inline-block;transform-origin:left center}
-  #panel{position:absolute;right:0;top:0;bottom:0;width:410px;padding:0 38px 40px 62px;display:flex;flex-direction:column;justify-content:flex-end;box-sizing:border-box;
+  #panel{position:absolute;right:0;top:0;bottom:0;width:410px;padding:118px 38px 40px 62px;display:flex;flex-direction:column;justify-content:flex-start;box-sizing:border-box;overflow-y:auto;scrollbar-width:none;
     background:linear-gradient(90deg,rgba(7,6,10,0) 0%,rgba(7,6,10,.8) 16%,rgba(7,6,10,.9) 100%);transition:opacity .45s,transform .55s cubic-bezier(.4,0,.2,1)}
+  #panel>:first-child{margin-top:auto}  /* text sits at the bottom, never climbs under the goal at the top right, and scrolls if a scene runs long */
   #panel.busy{opacity:0;transform:translateX(70px);pointer-events:none}
   .peek #panel,.peek #top,.peek #party,.peek #map,.peek #snd,.peek #topshade,.peek #toast{opacity:0!important;pointer-events:none}
   #panel,#top,#party,#map,#snd,#topshade{transition:opacity .4s}
@@ -75,6 +76,7 @@
   #lang{position:absolute;left:30px;top:112px;font-size:14px;color:#b5a88e;z-index:3}
   #lang a{cursor:pointer;margin-right:12px}#lang a.on{color:#ffd27a;border-bottom:1px solid #ffd27a}#lang a:hover{color:#fff}
   .cine #lang{opacity:0}
+  #story .diff{margin:4px 0 10px}#story .diff .dd{font-size:13px;color:#b5a88e;font-style:italic;margin-top:4px}
   #story .langs{margin-top:14px;font-size:15px}#story .langs a{cursor:pointer;color:#b5a88e;margin:0 10px}#story .langs a.on{color:#ffd27a}
   #toast{position:absolute;left:50%;top:104px;transform:translateX(-50%);font-size:16px;font-style:italic;color:#ffe0a0;opacity:0;transition:opacity .5s;white-space:nowrap;z-index:3;
     background:rgba(7,6,10,.75);padding:6px 16px;border-radius:2px}
@@ -433,10 +435,27 @@ const pay=c=>{if(!c)return;Object.entries(c).forEach(([k,v])=>G.res[k]-=v)};
 const gain=c=>{let up=false,down=false;for(const k in c){G.res[k]=Math.max(0,G.res[k]+c[k]);if(c[k]>0)up=true;else down=true}if(up)A.sfx(c.Coin>0?'coin':'gain');else if(down)A.sfx('loss')};
 const cost=c=>Object.entries(c).map(([k,v])=>`${v} ${k}`).join(', ');
 // Every season rolls its own prices and its own luck, so familiar places don't always pay the same.
+// Difficulty: every roll still varies, but Gentle rolls in the kind half of each range and Hard in the harsh half.
+const DIFF={
+  gentle:{name:'Gentle',days:16,lean:1,shuffle:false,trouble:.45,desc:'Sixteen days, kinder prices, the roads in the same order every time'},
+  standard:{name:'Standard',days:14,lean:0,shuffle:true,trouble:.75,desc:'Fourteen days, prices and roads rolled every season'},
+  hard:{name:'Hard',days:14,lean:-1,shuffle:true,trouble:.9,desc:'Fourteen days, harsher prices, trouble at home more often'}};
+const DIFF_ORDER=['gentle','standard','hard'];
 const rnd=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
-const COST={walls:{Stone:rnd(3,5),Coin:rnd(1,2)},tower:{Stone:rnd(5,7),Coin:rnd(3,5)}};
-const Y={shrineHaul:rnd(1,3),mists:rnd(2,4),mistsLuck:.3+Math.random()*.4,hollow:rnd(2,4),quarry:rnd(2,4),climb:rnd(4,6),climbFall:.2+Math.random()*.25,
-  toll:rnd(1,2),market:rnd(1,3),steel:rnd(2,4),alms:rnd(1,3),wagon:rnd(2,4),sell:rnd(1,3),ferry:rnd(1,2),purse:rnd(2,4),chapel:rnd(3,5),wispLuck:.35+Math.random()*.3};
+let LEAN=0;
+const low=(a,b)=>rnd(a,Math.floor((a+b)/2)),high=(a,b)=>rnd(Math.ceil((a+b)/2),b);
+const price=(a,b)=>LEAN>0?low(a,b):LEAN<0?high(a,b):rnd(a,b);   // something you pay
+const reward=(a,b)=>LEAN>0?high(a,b):LEAN<0?low(a,b):rnd(a,b);  // something you get
+const half=()=>LEAN>0?.5+Math.random()*.5:LEAN<0?Math.random()*.5:Math.random();
+const chance=(a,b)=>a+b*half();      // a good chance, from a to a+b
+const risk=(a,b)=>a+b*(1-half());    // a bad chance, from a to a+b
+const COST={},Y={};
+function rollSeason(){
+  Object.assign(COST,{walls:{Stone:price(3,5),Coin:price(1,2)},tower:{Stone:price(5,7),Coin:price(3,5)}});
+  Object.assign(Y,{shrineHaul:reward(1,3),mists:reward(2,4),mistsLuck:chance(.3,.4),hollow:reward(2,4),quarry:reward(2,4),climb:reward(4,6),climbFall:risk(.2,.25),
+    toll:price(1,2),market:reward(1,3),steel:reward(2,4),alms:reward(1,3),wagon:reward(2,4),sell:reward(1,3),ferry:price(1,2),purse:reward(2,4),chapel:reward(3,5),wispLuck:chance(.35,.3)});
+}
+rollSeason();
 // Gear is carried: each member has two slots, and whoever carries an item gets what it does.
 // Stores stay at Ravenwick or with the baggage and help everyone.
 const ITEMS={
@@ -460,7 +479,7 @@ const holder=k=>MEMBERS.find(m=>G.party[m]!=='gone'&&G.eq[m].includes(k))||null;
 const owned=k=>G.items.includes(k)||G.pack.includes(k)||!!holder(k);
 const hasItem=k=>ITEMS[k].kind==='stores'?G.items.includes(k):!!holder(k);
 const knows=k=>G.party[LEARN[k].m]!=='gone'&&G.learned[LEARN[k].m].includes(k);
-const carries=(m,sk)=>G.eq[m].some(k=>ITEMS[k].grants===sk);
+const carries=(m,sk)=>(G.eq[m]||[]).some(k=>ITEMS[k].grants===sk);
 const canSkill=(m,sk)=>G.party[m]!=='gone'&&((INNATE[sk]||[]).includes(m)&&(sk!=='mend'||true)||carries(m,sk)||(sk==='mend'&&G.learned[m].includes('herbs')));
 function actorFor(sk){const able=MEMBERS.filter(m=>canSkill(m,sk));return able.find(m=>has(m))||able[0]||null}
 const costOf=b=>({Stone:Math.max(1,COST[b].Stone-(knows('masonry')?1:0)),Coin:COST[b].Coin});
@@ -534,7 +553,7 @@ function maybeTrouble(){
   if(!G.built.walls&&G.day>=3&&!G.troublesDone.thieves&&!(G.thievesBack>G.day))pool.push('thieves');
   if(G.day>=4&&!G.troubleSeen.refugees)pool.push('refugees');
   if(G.day>=6&&!G.troubleSeen.fire)pool.push('fire');
-  if(pool.length&&Math.random()<.75){G.trouble=pool[Math.floor(Math.random()*pool.length)];G.troubleSeen[G.trouble]=1}
+  if(pool.length&&Math.random()<DIFF[G.diff||'standard'].trouble){G.trouble=pool[Math.floor(Math.random()*pool.length)];G.troubleSeen[G.trouble]=1}
 }
 function busy(b){G.busy=b;document.getElementById('panel').classList.toggle('busy',b)}
 async function beat(fn){busy(true);A.sfx('click');await fn();
@@ -561,13 +580,31 @@ const LOC={
   drowned_chapel:{name:'The Drowned Chapel',r:'f',x:196,y:88,links:['fen_lights','stillwater','abandoned_wagon'],home:2},
   stillwater:{name:'Stillwater',r:'f',x:244,y:88,links:['drowned_chapel','friendly_hamlet'],home:1,repeat:1,boat:1},
 };
+// Where each place sits along its road is rolled every season, like the prices: the first three
+// slots of the Greyspires and the lowlands shuffle, and so do the two inner Fens slots. The Ferry
+// (the way across the river) and the repeatable places at the far ends stay put.
+const SHUFFLE=[['shrine','lost_in_mists','hidden_cache'],['highwaymen','pilgrims','abandoned_wagon'],['fen_lights','drowned_chapel']];
+const SLOT={},FIRST={};  // SLOT: slot id (the place there in the base layout) -> the place there this season; FIRST: first place on each road
+const BASE_LOC=JSON.parse(JSON.stringify(LOC));
+function placeRoads(shuffle){
+  for(const g of SHUFFLE){const p=[...g];if(shuffle)for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}g.forEach((s,i)=>SLOT[s]=p[i])}
+  const base=BASE_LOC,at=s=>SLOT[s]||s;for(const k in LOC)delete LOC[k];
+  for(const s in base){const n=at(s),B=base[s],P=base[n];LOC[n]={...B,name:P.name,repeat:P.repeat,boat:P.boat,links:B.links.map(at)};if(!P.repeat)delete LOC[n].repeat;if(!P.boat)delete LOC[n].boat}
+  Object.assign(FIRST,{n:SLOT.shrine,e:SLOT.highwaymen,f:'ferry'});
+}
+placeRoads(true);
+// Pick a difficulty before the season starts: it sets the season's length, re-rolls prices and places the roads.
+function setDifficulty(k){if(!DIFF[k])k='standard';const D=DIFF[k];G.diff=k;G.maxDay=D.days;LEAN=D.lean;rollSeason();placeRoads(D.shuffle);try{localStorage.setItem('qe.difficulty',k)}catch(e){}}
+// Difficulty is tabled for now: everyone plays Standard. The picker (diffLinks) is off the title screen;
+// #diff=gentle|hard in the URL still works for testing.
+setDifficulty(new URLSearchParams(location.hash.slice(1)).get('diff')||'standard');
 const REGION={n:'the Greyspires',e:'the lowlands',f:'the Fens'};
 const RUMOUR={shrine:'a broken spire with a green light in it',lost_in_mists:'mist pouring down the high pass',hidden_cache:'a sunlit hollow below the pass, and something glinting',
   hidden_pass:'old quarry workings under the snowline',highwaymen:'smoke over the hills: someone camped on the road',pilgrims:'lanterns moving slowly along the ridge',
   abandoned_wagon:'crows circling something on the road',friendly_hamlet:'the hamlet of Hollin and its market',ferry:'a lantern on the river, and a raft on a rope',
   fen_lights:'pale lights moving over black water',drowned_chapel:'a bell tower standing up out of a lake',stillwater:'huts on stilts, and boats'};
 const known=n=>G.visited[n]||LOC[n].links.some(x=>G.visited[x]);
-const CROSS_HOVER={shrine:['dest_north','road_north'],highwaymen:['dest_east','road_east'],ferry:['dest_fens','road_fens']};
+const CROSS_HOVER={n:['dest_north','road_north'],e:['dest_east','road_east'],f:['dest_fens','road_fens']};
 function travelOptions(from){
   const L=LOC[from],out=[];
   for(const n of L.links){
@@ -575,17 +612,17 @@ function travelOptions(from){
     const T=LOC[n],other=L.r&&T.r&&L.r!==T.r;
     let t,sub;
     if(n==='crossroads'){t='Back to the fork';sub='1 day';}
-    else if(from==='crossroads'){t={shrine:'North, into the Greyspires',highwaymen:'East, into the lowlands',ferry:'West, down to the Fens'}[n];sub=(G.visited[n]?T.name:'You can see '+RUMOUR[n])+' · 1 day';}
+    else if(from==='crossroads'){t={n:'North, into the Greyspires',e:'East, into the lowlands',f:'West, down to the Fens'}[T.r];sub=(G.visited[n]?T.name:'You can see '+RUMOUR[n])+' · 1 day';}
     else if(!G.visited[n]){t=other?`Cross into ${REGION[T.r]}`:'Press on';sub='You can see '+RUMOUR[n]+' · 1 day';}
     else{t=`To ${T.name}`+(other?` (${REGION[T.r]})`:'');sub='1 day'+(G.done[n]&&!T.repeat?' · nothing more there':'');}
-    out.push({t,s:sub,hover:from==='crossroads'?CROSS_HOVER[n]:null,go:()=>go(n,{days:1,out:walkPath(from,n)})});
+    out.push({t,s:sub,hover:from==='crossroads'?CROSS_HOVER[LOC[n].r]:null,go:()=>go(n,{days:1,out:walkPath(from,n)})});
   }
   const hd=L.home||0;
   out.push({t:from==='crossroads'?'Back through the gate':L.boat?'Take the barge home':'Home to Ravenwick',s:hd?`${hd} day${hd>1?'s':''} · ${L.boat?'upriver by boat':'the river path'}`:'Ravenwick is right behind you',go:()=>go('ravenwick',{days:hd,out:[[0,70,1,1,1100]]})});
   return out;
 }
 function walkPath(from,to){
-  if(from==='crossroads')return to==='shrine'?[[-30,-26,.75,1,1000],[-50,-46,.35,0,1300]]:to==='highwaymen'?[[30,-26,.75,1,1000],[56,-46,.35,0,1300]]:[[-60,-24,.9,1,1100],[-120,-30,.7,0,1200]];
+  if(from==='crossroads')return LOC[to].r==='n'?[[-30,-26,.75,1,1000],[-50,-46,.35,0,1300]]:LOC[to].r==='e'?[[30,-26,.75,1,1000],[56,-46,.35,0,1300]]:[[-60,-24,.9,1,1100],[-120,-30,.7,0,1200]];
   if(G.visited[to]&&LOC[to].home<=LOC[from].home)return [[-150,0,1,0,1700]];
   return [[150,-4,.92,0,1800]];
 }
@@ -744,7 +781,9 @@ ravenwick:()=>{
   if(G.sub==='end'){const win=G.win,left=MEMBERS.filter(m=>G.party[m]!=='gone').length;
     return win?{kind:'THE FIRST NIGHT OF WINTER',title:'Ravenwick Watches',
       body:'They came down out of the Greyspires in the snow: dozens of them, and something vast behind the ridge. The watchtower saw them first. The beacon was lit, the bells rang, and they turned back into the dark. For now.',
-      cap:`Season 1 won on day ${G.endDay}${G.endDay<G.maxDay?', with '+(G.maxDay-G.endDay)+' days to spare':''} · ${left} of 4 still with you`,ch:[{t:'Play again',s:'',go:()=>location.reload()}]}
+      cap:`Season 1 won on day ${G.endDay}${G.endDay<G.maxDay?', with '+(G.maxDay-G.endDay)+' days to spare':''} · ${left} of 4 still with you${G.saved?' · Chronicle saved':''}`,ch:[
+      {t:'Keep the chronicle as a file',s:'Season 2 begins from it',go:()=>{A.sfx('click');downloadChronicle()}},
+      {t:'Play again',s:'',go:()=>location.reload()}]}
     :{kind:'THE FIRST NIGHT OF WINTER',title:'Ravenwick Falls',
       body:`They came down out of the Greyspires in the snow, and nobody saw them coming. ${G.built.walls?'The walls held for an hour.':'There were no walls to hold them.'} By morning the fires were out.`,
       cap:'Defeat · Season 1. You need BOTH walls and a watchtower. Press on through a region instead of walking back and forth: each step deeper is one day, and Ravenwick is never more than two days away.',
@@ -802,7 +841,7 @@ function drawMap(){
     h+=n==='ravenwick'?`<rect x="${L.x-5}" y="${L.y-5}" width="10" height="10" fill="${cur?'#ff7d63':'#efe2c8'}" stroke="#000" stroke-width=".5"/>`:
       `<circle cx="${L.x}" cy="${L.y}" r="${cur?6:4}" fill="${cur?'#ff7d63':v?'#efe2c8':'rgba(0,0,0,.5)'}" stroke="#efe2c8" stroke-width="1"/>`+(v?'':`<text x="${L.x}" y="${L.y+3.5}" font-size="9" fill="#efe2c8" text-anchor="middle" font-family="Georgia">?</text>`);
     if(cur)h+=`<text x="${L.x}" y="${L.y+(L.y>70?16:L.y>30?16:-9)}" font-size="11" fill="#ffd8a0" text-anchor="middle" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">${L.name}</text>`}
-  if(known('shrine'))h+=`<text x="276" y="17" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">Greyspires</text>`;if(known('ferry'))h+=`<text x="276" y="93" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">Fens</text>`;if(known('highwaymen'))h+=`<text x="276" y="55" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">lowlands</text>`;
+  if(known(FIRST.n))h+=`<text x="276" y="17" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">Greyspires</text>`;if(known(FIRST.f))h+=`<text x="276" y="93" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">Fens</text>`;if(known(FIRST.e))h+=`<text x="276" y="55" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">lowlands</text>`;
   svg.innerHTML=h;
 }
 function endTrouble(){G.trouble=null;G.sub=null;sound()}
@@ -810,6 +849,24 @@ function haul(n,x,y){return beat(async()=>{const m=has('m_captain')?'m_captain':
   for(let i=0;i<3;i++){spark(x,y-4,6,'150,160,150',.7);shake(120,.6);A.sfx('stone');await sleep(300)}await back(m,1100);n+=hasItem('mule')?1:0;gain({Stone:n});
   if(m==='m_captain')loyal('m_captain',Math.random()<.5?1:0);outcome('','Heavy going, but it is good stone. +'+n+' Stone.')})}
 
+
+/* =================================================================== the chronicle (end-of-season save) */
+// A won season is written down as a chronicle: everything the next season carries forward.
+// Plain versioned JSON, so the Godot/Steam build can read the same file (user://chronicle.json).
+const SAVE_KEY='qe.chronicle';
+function chronicle(){
+  const pick=o=>JSON.parse(JSON.stringify(o));
+  return {format:'quests-and-encounters/chronicle',version:1,season:1,title:'Before the Snow',difficulty:G.diff||'standard',savedAt:new Date().toISOString(),
+    result:{win:!!G.win,endDay:G.endDay,maxDay:G.maxDay},
+    company:{party:pick(G.party),loyal:pick(G.loyal),hurt:pick(G.hurt),eq:pick(G.eq),learned:pick(G.learned),gear:pick(G.gear)},
+    stores:{res:pick(G.res),items:pick(G.items),pack:pick(G.pack)},
+    ravenwick:{built:pick(G.built),refugeesIn:!!G.refugeesIn,troublesDone:pick(G.troublesDone)},
+    world:{flags:pick(G.flags),visited:Object.keys(G.visited).filter(k=>G.visited[k]),done:Object.keys(G.done).filter(k=>G.done[k])}};
+}
+function saveChronicle(){const c=chronicle();G.saved=c;try{localStorage.setItem(SAVE_KEY,JSON.stringify(c));localStorage.setItem(SAVE_KEY+'.s'+c.season,JSON.stringify(c))}catch(e){}return c}
+function loadChronicle(){try{const c=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');return c&&c.format==='quests-and-encounters/chronicle'?c:null}catch(e){return null}}
+function downloadChronicle(){const c=G.saved||loadChronicle();if(!c)return;const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(c,null,2)],{type:'application/json'}));a.download=`ravenwick-season${c.season}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Chronicle saved to a file')}
 
 /* =================================================================== the first night of winter */
 async function startEnd(win){
@@ -826,6 +883,7 @@ async function startEnd(win){
     await sleep(1200);A.sfx('gallop');await sleep(3600);A.mood('victory')}
   else{await sleep(4600);await sleep(1000);E.fall=performance.now();A.sfx('clash');A.sfx('rumble');shake(1800,3);flash(500,'255,50,30');
     for(const m of MEMBERS)tw(m,{a:0},2000);await sleep(2600);A.mood('defeat')}
+  if(win)saveChronicle();
   G.sub='end';pnl.style.opacity='';document.getElementById('stage').classList.remove('cine');busy(false);render();
 }
 function endDraw(t,layer){
@@ -877,13 +935,15 @@ const story=(html,card=false)=>{const el=document.getElementById('story');el.cla
 const unstory=()=>{const el=document.getElementById('story');el.style.display='none'};
 function waitPick(ids){return new Promise(res=>{for(const [id,v] of ids){const e=document.getElementById(id);if(e)e.onclick=()=>{A.sfx('click');res(v)}}})}
 async function showScene(scene,mood){const f=document.getElementById('fade');f.style.opacity=1;await sleep(600);O={};G.scene=scene;A.mood(mood);A.ambience((SCENE_SOUND[scene]||[0,['wind']])[1]);f.style.opacity=0;await sleep(400)}
+const diffLinks=()=>`<div class="langs diff">${DIFF_ORDER.map(k=>`<a class="${G.diff===k?'on':''}" onclick="pickDiff('${k}')">${DIFF[k].name}</a>`).join('')}<div class="dd">${DIFF[G.diff].desc}</div></div>`;
+function pickDiff(k){A.sfx&&A.sfx('click');setDifficulty(k);const d=document.querySelector('#story .diff');if(d)d.outerHTML=diffLinks()}
 const LANGS=[['en','English'],['ru','Русский'],['es','Español']];
 const langLinks=()=>`<div class="langs">${LANGS.map(([k,n])=>`<a class="${I18N.lang===k?'on':''}" onclick="setLang('${k}')">${n}</a>`).join('')}</div>`;
 function setLang(k){I18N.set(k);drawLang();const l=document.querySelector('#story .langs');if(l)l.outerHTML=langLinks();render()}
 function drawLang(){document.getElementById('lang').innerHTML=LANGS.map(([k,n])=>`<a class="${I18N.lang===k?'on':''}" onclick="setLang('${k}')">${k.toUpperCase()}</a>`).join('')}
 function splash(){
   document.getElementById('stage').classList.add('cine');G.mode='splash';
-  story(`<div class="k">A GAME OF ROADS AND WINTERS</div><h2>Quests and Encounters</h2><p>Season One · Before the Snow</p>
+  story(`<div class="k">A GAME OF ROADS AND WINTERS</div><h2>Quests and Encounters</h2><p>Season One · Before the Snow</p>${(c=>c?`<p style="font-size:14px;color:#b5a88e">Chronicle saved: Season ${c.season} won on day ${c.result.endDay}. Season 2 will begin from it.</p>`:'')(loadChronicle())}
     <div class="btns"><a id="b_go">Begin</a><a id="b_skipintro" class="quiet">Skip the story</a><a id="b_skipall" class="quiet">Skip story and tutorial</a></div>${langLinks()}`);
   waitPick([['b_go','all'],['b_skipintro','meet'],['b_skipall','none']]).then(async v=>{A.start();
     if(v==='none')G.tutorial=false;
@@ -910,7 +970,7 @@ async function meetCompany(){
   unstory();
 }
 function startSeason(){
-  G.mode=null;G.sub=null;document.getElementById('stage').classList.remove('cine');sound();render();toast('Day 1. Fourteen days to the first snow.');
+  G.mode=null;G.sub=null;document.getElementById('stage').classList.remove('cine');sound();render();toast(`Day 1. ${G.maxDay} days to the first snow.`);
 }
 
 /* =================================================================== tutorial tips */
@@ -933,25 +993,39 @@ const TIPS=[
   {k:'trouble',when:()=>atHome()&&G.trouble,at:()=>chWith('Deal with')||chWith('Speak with'),side:'left',text:'<b>Trouble at home</b> costs you every day until you deal with it. You can also click it in the painting.'},
   {k:'build',when:()=>atHome()&&(!!chWith('Build the walls')||!!chWith('Raise the watchtower'))&&!document.querySelector('#panel .ch.off')?.innerText.match(/Build|Raise/),at:()=>chWith('Build the walls')||chWith('Raise the watchtower'),side:'left',text:'You can afford it. <b>Build!</b>'},
 ];
-let tipOn=null;
+let tipOn=null,tipClose=null,tipAnchor=null;
 function runTips(){
-  if(!G.tutorial||G.mode||G.busy||G.over||tipOn||G.sheet||G.search||G.striking)return;
+  // A tip that is showing follows its target, and goes away by itself once its moment has passed
+  // (the player moved on, the target left the screen, or a scene or sheet took over).
+  if(tipOn){
+    if(!G.tutorial||G.over||G.busy||!tipOn.when())return tipClose(true);  // its moment has passed (or the player acted): done with it
+    if(G.mode||G.sheet||G.search||G.striking)return tipClose(false);       // something took over for a moment: show it again later
+    const el=tipOn.at();
+    if(!el||!el.getClientRects().length)return tipClose(false);
+    if(el!==tipAnchor){tipAnchor.style.outline='';tipAnchor=el;el.style.outline='2px solid rgba(255,210,122,.8)';el.style.outlineOffset='4px'}  // the panel was redrawn
+    placeTip(tipOn,el);return;
+  }
+  if(!G.tutorial||G.mode||G.busy||G.over||G.sheet||G.search||G.striking)return;
   const t=TIPS.find(t=>!G.tips[t.k]&&t.when());if(!t)return;const el=t.at();if(!el)return;
   showTip(t,el);
 }
 function showTip(t,anchor){
-  tipOn=t;const tip=$('#tip'),stage=$('#stage'),sr=stage.getBoundingClientRect(),k=sr.width/1280,r=anchor.getBoundingClientRect();
-  const ax=(r.left-sr.left)/k,ay=(r.top-sr.top)/k,aw=r.width/k,ah=r.height/k;
+  tipOn=t;tipAnchor=anchor;const tip=$('#tip');
   tip.innerHTML=`<div class="arr"></div>${typeof t.text==='function'?t.text():t.text}<div class="tb"><a class="quiet" id="tipskip">Skip tutorial</a><a id="tipok">Got it</a></div>`;tip.style.display='block';
-  const tw_=tip.offsetWidth,th=tip.offsetHeight,arr=tip.querySelector('.arr');
+  placeTip(t,anchor);
+  anchor.style.outline='2px solid rgba(255,210,122,.8)';anchor.style.outlineOffset='4px';
+  const close=tipClose=(seen=true)=>{(tipAnchor||anchor).style.outline='';tip.style.display='none';tipOn=tipClose=tipAnchor=null;if(!seen)return;G.tips[t.k]=1;if(t.k==='gear')G.want.gear=0;if(t.k==='loyal')G.want.loyal=0;setTimeout(runTips,250)};
+  $('#tipok').onclick=()=>{_sfx('click');close()};
+  $('#tipskip').onclick=()=>{_sfx('click');G.tutorial=false;close()};
+}
+function placeTip(t,anchor){
+  const tip=$('#tip'),stage=$('#stage'),sr=stage.getBoundingClientRect(),k=sr.width/1280,r=anchor.getBoundingClientRect();
+  const ax=(r.left-sr.left)/k,ay=(r.top-sr.top)/k,aw=r.width/k,ah=r.height/k;
+  const tw_=tip.offsetWidth,th=tip.offsetHeight,arr=tip.querySelector('.arr');arr.style.border='';
   let x,y;
   if(t.side==='below'){x=Math.max(16,Math.min(1280-tw_-16,ax+aw/2-tw_/2));y=ay+ah+14;arr.style.left=(ax+aw/2-x-7)+'px';arr.style.top='-8px';arr.style.borderRight=arr.style.borderBottom='none'}
   else{x=ax-tw_-20;y=Math.max(16,Math.min(720-th-16,ay+ah/2-th/2));arr.style.left=(tw_-9)+'px';arr.style.top=(ay+ah/2-y-7)+'px';arr.style.borderLeft=arr.style.borderBottom='none'}
   tip.style.left=x+'px';tip.style.top=y+'px';
-  anchor.style.outline='2px solid rgba(255,210,122,.8)';anchor.style.outlineOffset='4px';
-  const close=()=>{anchor.style.outline='';tip.style.display='none';tipOn=null;G.tips[t.k]=1;if(t.k==='gear')G.want.gear=0;if(t.k==='loyal')G.want.loyal=0;setTimeout(runTips,250)};
-  $('#tipok').onclick=()=>{_sfx('click');close()};
-  $('#tipskip').onclick=()=>{_sfx('click');G.tutorial=false;close()};
 }
 setInterval(runTips,400);
 

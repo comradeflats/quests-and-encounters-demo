@@ -679,5 +679,18 @@ window.I18N_DICT.es={
 "−# %": "−# %",
 "# %": "# %",
 "+# %": "+# %",
-"# % → # %": "# %1 → # %2"
+"# % → # %": "# %1 → # %2",
+"Chronicle saved": "Crónica guardada",
+"Keep the chronicle as a file": "Guardar la crónica en un archivo",
+"Season # begins from it": "La temporada # empieza desde ella",
+"Chronicle saved: Season # won on % #.": "Crónica guardada: temporada #1 ganada el %1 #2.",
+"Season # will begin from it.": "La temporada # empezará desde ella.",
+"Chronicle saved to a file": "Crónica guardada en un archivo",
+"# % to the first snow.": "# % para la primera nevada.",
+"Gentle": "Suave",
+"Standard": "Normal",
+"Hard": "Duro",
+"Sixteen days, kinder prices, the roads in the same order every time": "Dieciséis días, precios más amables, los caminos siempre en el mismo orden",
+"Fourteen days, prices and roads rolled every season": "Catorce días, precios y caminos al azar cada temporada",
+"Fourteen days, harsher prices, trouble at home more often": "Catorce días, precios más duros, más problemas en casa"
 };
