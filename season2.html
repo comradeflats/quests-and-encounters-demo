@@ -1,0 +1,557 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Quests and Encounters · Season 2 · The Long Night</title>
+<link rel="stylesheet" href="s2/base.css">
+<style>
+  #fac{z-index:2;left:30px;top:76px;font-size:14px;color:#cbbd9f;display:flex;gap:18px}
+  #fac .h{color:#e0806a;letter-spacing:2px}#fac .away{opacity:.4;font-style:italic}
+  #goal .q{font-size:13.5px;color:#cbbd9f;font-style:italic}#goal .q b{font-weight:normal;color:#fbe9bd;font-style:normal}
+  #party .fallen{opacity:.45;text-decoration:line-through}
+</style></head><body>
+<div id="stage">
+  <canvas id="c" width="427" height="240"></canvas>
+  <div id="topshade"></div>
+  <div id="fade"></div>
+  <div id="top" class="hud"><div id="res"></div><div id="goal"></div></div>
+  <div id="party" class="hud"></div>
+  <div id="fac" class="hud"></div>
+  <div id="toast" class="hud"></div>
+  <div id="story" class="hud"></div>
+  <div id="strike"></div>
+  <div id="panel" class="hud"></div>
+  <div id="snd" class="hud">♪ sound on · M to mute · hold Space to see the whole scene</div>
+</div>
+<script src="audio.js"></script>
+<script src="s2/art.js"></script>
+<script src="s2/content.js"></script>
+<script>
+/* ================================================================ Season 2 · The Long Night (browser build)
+   Rules and flow. Content (places, council matters, costs) is in s2/content.js; art is exported by
+   tools/art/s2_export.py. Same look and sound as Season 1; the scene art is one image per scene plus the
+   four Company sprites. #bot=1 plays a season by itself and writes a log into <pre id="botlog">. */
+const A = window.Audio2 || {mood() {}, ambience() {}, sfx() {}, toggle() {}, start() {}};
+const cv = document.getElementById('c'), ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
+const CW = 427, CH = 240, SY = 60;
+const sleep = ms => new Promise(r => setTimeout(r, ms / (window.SPEED || 1)));
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const $ = id => document.getElementById(id);
+
+const BG = {}; for (const k of S2ART.scenes) { const i = new Image(); i.src = 's2/' + k + '.png'; BG[k] = i; }
+const MEM = {}; for (const k in S2ART.members) { const i = new Image(); i.src = 's2/' + k + '.png'; MEM[k] = {...S2ART.members[k], img: i}; }
+const MEMBERS = ['m_banner', 'm_cleric', 'm_captain', 'm_tracker'];
+const CO = {
+  m_banner: {short: 'Wren', stats: {Might: 2, Wits: 3, Faith: 2, Stealth: 1}},
+  m_cleric: {short: 'Aldous', stats: {Might: 1, Wits: 3, Faith: 5, Stealth: 1}},
+  m_captain: {short: 'Brannoc', stats: {Might: 5, Wits: 2, Faith: 1, Stealth: 1}},
+  m_tracker: {short: 'Ness', stats: {Might: 2, Wits: 4, Faith: 1, Stealth: 5}},
+};
+const nm = m => CO[m].short;
+const RES = ['Bread', 'Timber', 'Stone', 'Coin', 'Ward'];
+
+/* ------------------------------------------------------------------ state */
+const G = {day: 1, scene: 'works', res: {}, people: 0, militia: 0, party: {}, loyal: {}, hurt: {}, fac: {}, built: {}, unlocked: {},
+  work: 'fish', q: {}, flags: {}, intel: [], visits: {}, once: {}, carry: {}, log: [], view: null, busy: false, builtToday: false, usedToday: {}};
+const SAVE_KEY = 'qe.chronicle';
+
+function newSeason() {
+  Object.assign(G.res, S2.start.res); G.people = S2.start.people; G.militia = S2.start.militia;
+  for (const m of MEMBERS) { G.party[m] = 'ok'; G.loyal[m] = 3; }
+  G.loyal.m_banner = null;
+  for (const k in S2.factions) G.fac[k] = {here: S2.factions[k].here, h: S2.factions[k].hearts, gifted: false};
+  for (const k in S2.districts) { G.built[k] = 0; G.unlocked[k] = !!S2.districts[k].open; }
+  G.q.season = 'open';
+  const c = loadChronicle();   // Season 1's chronicle, if there is one; otherwise this default Company
+  G.from = c ? 'chronicle' : 'default';
+  if (c && c.season === 1) {
+    const co = c.company || {};
+    for (const m of MEMBERS) {
+      if (co.party && co.party[m]) G.party[m] = co.party[m] === 'gone' ? 'gone' : 'ok';
+      if (co.loyal && co.loyal[m] != null) G.loyal[m] = co.loyal[m];
+    }
+    const r = (c.stores || {}).res || {};
+    G.res.Stone += Math.min(3, r.Stone || 0); G.res.Coin += Math.min(3, r.Coin || 0); G.res.Ward = Math.max(1, Math.min(3, r.Ward || 1));
+    const spare = Math.max(0, ((c.result || {}).maxDay || 14) - ((c.result || {}).endDay || 14));
+    G.res.Bread += spare; G.res.Stone += Math.min(2, spare);
+    if ((c.ravenwick || {}).refugeesIn) { G.people += 3; G.militia += 1; G.flags.sergeant = 1; }
+    const fl = (c.world || {}).flags || {};
+    const keys = Object.keys(fl).join(' ');
+    G.flags.shrineDark = /shrine.*(broke|desecr|rob)/i.test(keys) && !/pray/i.test(keys);
+    G.flags.bridgeHeld = /highway.*(paid|pay)/i.test(keys) ? 'the highwaymen you paid off, grown bold' : /highway.*(fought|fight|driven)/i.test(keys) ? 'strangers in masks: the highwaymen are gone' : null;
+  }
+}
+function loadChronicle() { try { const c = JSON.parse(localStorage.getItem(SAVE_KEY + '.s1') || localStorage.getItem(SAVE_KEY) || 'null'); return c && c.format === 'quests-and-encounters/chronicle' && c.season === 1 && (c.result || {}).win ? c : null } catch (e) { return null } }
+function saveChronicle(result) {
+  const c = {format: 'quests-and-encounters/chronicle', version: 1, season: 2, title: 'The Long Night', savedAt: new Date().toISOString(),
+    result, company: {party: G.party, loyal: G.loyal, hurt: G.hurt}, stores: {res: G.res}, city: {people: G.people, militia: G.militia, built: G.built,
+      factions: G.fac}, world: {flags: G.flags, quests: G.q, intel: G.intel}};
+  try { if (!window.BOT) { localStorage.setItem(SAVE_KEY, JSON.stringify(c)); localStorage.setItem(SAVE_KEY + '.s2', JSON.stringify(c)); } } catch (e) {}
+  return c;
+}
+
+const here = m => G.party[m] === 'ok';
+const has = m => here(m) && !G.hurt[m];
+const can = c => !c || Object.entries(c).every(([k, v]) => G.res[k] >= v);
+const pay = c => { if (c) for (const k in c) G.res[k] -= c[k]; };
+const cost = c => Object.entries(c).map(([k, v]) => `${v} ${k}`).join(', ');
+const builtN = () => Object.values(G.built).filter(Boolean).length;
+const need = () => Math.ceil(G.people / 5);
+const facHere = () => Object.keys(G.fac).filter(k => G.fac[k].here);
+const S = k => S2.factions[k];
+
+/* ------------------------------------------------------------------ effects */
+function fx(e, notes = []) {
+  if (!e) return notes;
+  if (e.res) for (const k in e.res) { const before = G.res[k]; G.res[k] = Math.max(0, G.res[k] + e.res[k]); const d = G.res[k] - before; if (d) notes.push(`${d > 0 ? '+' : ''}${d} ${k}`); }
+  if (e.people) { G.people = Math.max(0, G.people + e.people); notes.push(`${e.people > 0 ? '+' : ''}${e.people} people`); }
+  if (e.militia) { G.militia = Math.max(0, G.militia + e.militia); notes.push(`+${e.militia} militia`); }
+  if (e.fac) for (const k in e.fac) heart(k, e.fac[k], notes);
+  if (e.hurt) for (const m of e.hurt) if (here(m)) { G.hurt[m] = 1; notes.push(`${nm(m)} is wounded`); A.sfx('hurt'); }
+  if (e.flag) Object.assign(G.flags, e.flag);
+  if (e.unlock) for (const d of e.unlock) unlock(d, notes);
+  if (e.intel) for (let i = 0; i < e.intel; i++) reveal(notes);
+  const up = e.res && Object.values(e.res).some(v => v > 0), down = e.res && Object.values(e.res).some(v => v < 0);
+  if (up) A.sfx(e.res.Coin > 0 ? 'coin' : 'gain'); else if (down) A.sfx('loss');
+  return notes;
+}
+function heart(k, d, notes) {
+  const f = G.fac[k]; if (!f || !f.here || !d) return;
+  f.h = Math.max(0, Math.min(5, f.h + d));
+  notes.push(`${S(k).short} ${d > 0 ? '♥+' + d : '♥' + d}`);
+  if (k === 'faithful' && f.h >= 3) unlock('chapel', notes);
+  if (f.h >= 5 && !f.gifted) { f.gifted = true; notes.push(S(k).gift); gift(k); }
+  if (f.h === 0) { f.here = false; G.people = Math.max(0, G.people - 3); notes.push(`${S(k).name} leave Ravenwick, and take their people with them (−3 people)`); }
+}
+function gift(k) {
+  if (k === 'faithful') { G.hurt = {}; G.res.Ward += 2; }
+  if (k === 'guild') G.res.Coin += 4;
+  if (k === 'fen') { G.res.Bread += 3; G.flags.boats = 1; G.flags.iceRoad = 1; }
+}
+function unlock(d, notes) { if (!G.unlocked[d]) { G.unlocked[d] = true; notes.push(`${S2.districts[d].building} can now be raised in ${S2.districts[d].name}`); } }
+function arrive(k, notes) { if (G.fac[k].here) return; G.fac[k].here = true; G.people += 3; notes.push(`${S(k).name} come to Ravenwick (+3 people). ${S(k).speaker} will sit on the council.`);
+  if (k === 'guild') unlock('square', notes); if (k === 'fen') unlock('stores', notes); }
+function reveal(notes) { const left = Object.keys(S2.threats).filter(t => !G.intel.includes(t)); if (!left.length) return; const t = left[0]; G.intel.push(t); notes.push(`You know of ${S2.threats[t].name}`); }
+
+/* ------------------------------------------------------------------ drawing */
+const SNOWY = {works: 1, square: 1, chapel: 1, yard: 1, stores: 1, crossroads_w: 0.4, cairn: 1, hermit: 3, thornmere: 0.3, toll_bridge: 1, monastery: 0.4,
+  frozen_wreck: 2, barrow: 0.4, thin_ice: 0, siege_warning: 1, siege_long_dark: 0.6};
+const FLAKES = Array.from({length: 160}, () => ({x: Math.random() * CW, y: Math.random() * CH, v: .2 + Math.random() * .5, w: Math.random() * 6}));
+function draw(t) {
+  const bg = BG[G.scene];
+  if (bg && bg.complete) ctx.drawImage(bg, 0, 0); else { ctx.fillStyle = '#07060a'; ctx.fillRect(0, 0, CW, CH); }
+  for (const m of MEMBERS) if (here(m) && MEM[m] && MEM[m].img.complete) {
+    const s = MEM[m]; ctx.globalAlpha = G.hurt[m] ? .75 : 1; ctx.drawImage(s.img, s.x, s.y); ctx.globalAlpha = 1;
+  }
+  if (here('m_cleric')) {   // the lantern's light, drawn live so it belongs to whatever scene we are in
+    const s = MEM.m_cleric, lx = s.x + s.w - 2, ly = s.y + 6, f = .85 + .15 * Math.sin(t / 180);
+    const g = ctx.createRadialGradient(lx, ly, 1, lx, ly, 26 * f); g.addColorStop(0, 'rgba(255,200,120,.55)'); g.addColorStop(1, 'rgba(255,160,80,0)');
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(lx - 30, ly - 30, 60, 60); ctx.globalCompositeOperation = 'source-over';
+  }
+  const sn = SNOWY[G.scene] || 0, ember = G.scene === 'siege_assault';
+  if (sn || ember) for (const f of FLAKES) {
+    if (ember) { f.y -= f.v * 1.2; f.x += Math.sin(t / 400 + f.w) * .3; if (f.y < 0) { f.y = CH; f.x = Math.random() * CW; } ctx.fillStyle = f.w > 3 ? '#ffb050' : '#ff6a2a'; }
+    else { f.y += f.v; f.x += sn > 1 ? f.v * sn : Math.sin(t / 900 + f.w) * .25; if (f.y > CH) { f.y = 0; f.x = Math.random() * CW; } if (f.x > CW) f.x = 0; ctx.fillStyle = 'rgba(240,244,250,.8)'; }
+    if (Math.random() < (ember ? 1 : Math.min(1, sn))) ctx.fillRect(f.x | 0, f.y | 0, 1, 1);
+  }
+}
+function loop(t) { draw(t); requestAnimationFrame(loop); }
+
+/* ------------------------------------------------------------------ panel & HUD */
+function show(v) { G.view = v; render(); }
+function busy(b) { G.busy = b; $('panel').classList.toggle('busy', b); }
+async function goScene(scene, mood, amb) {
+  if (G.scene === scene) { if (mood) A.mood(mood); return; }
+  const f = $('fade'); f.style.opacity = 1; await sleep(500); G.scene = scene; if (mood) A.mood(mood); if (amb) A.ambience(amb); f.style.opacity = 0; await sleep(300);
+}
+let toastT; function toast(s) { const el = $('toast'); el.textContent = s; el.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => el.style.opacity = 0, 2600); }
+function fitPanel() { const p = $('panel'); p.classList.remove('d1', 'd2'); for (const d of ['d1', 'd2']) { if (p.scrollHeight <= p.clientHeight + 1) return; p.classList.remove('d1'); p.classList.add(d); } }
+function render() {
+  const v = G.view, p = $('panel');
+  if (v) {
+    const barks = (v.barks || []).map(([w, l]) => `<div class="bark">${w ? `<b>${w}:</b> ` : ''}${l}</div>`).join('');
+    p.innerHTML = (v.kind ? `<div class="kind">${v.kind}</div>` : '') + (v.title ? `<h1>${v.title}</h1>` : '') + `<div class="body">${v.body}</div>${barks}<div class="cap">${v.cap || ''}</div>` +
+      v.ch.map((c, i) => {
+        const lockWho = c.who && !has(c.who), lock = c.off || lockWho || !can(c.c);
+        const why = c.off ? c.off : lockWho ? (here(c.who) ? `${nm(c.who)} is wounded` : `${nm(c.who)} is gone`) : !can(c.c) ? 'Needs ' + cost(c.c) : '';
+        return `<a class="ch ${lock ? 'off' : ''}" data-i="${i}">${c.who ? `<span class="who">${nm(c.who)}:</span> ` : ''}${c.t}${(why || c.s) ? `<small>${why || c.s}</small>` : ''}</a>`;
+      }).join('');
+    p.querySelectorAll('.ch').forEach(a => { const c = v.ch[+a.dataset.i]; a.onclick = () => choose(c); a.onmouseenter = () => A.sfx('hover'); });
+    fitPanel();
+  } else p.innerHTML = '';
+  $('res').innerHTML = RES.map(k => `<span class="${k === 'Bread' && G.res.Bread < need() ? 'lo' : ''}">${k} <b>${G.res[k]}</b></span>`).join('') +
+    `<span>People <b>${G.people}</b></span>` + (G.militia ? `<span>Militia <b>${G.militia}</b></span>` : '');
+  const left = S2.siegeDay - G.day;
+  const dl = Object.keys(S2.districts).filter(d => G.built[d]).map(d => S2.districts[d].building);
+  $('goal').innerHTML = `<div class="big">Day ${Math.min(G.day, S2.maxDay)} of ${S2.maxDay} · ${left > 0 ? left + (left === 1 ? ' day' : ' days') + ' to Midwinter' : 'Midwinter'}</div>` +
+    `<div class="sm">${builtN() >= 3 ? '<span class="done">✓ A City</span>' : `<span class="now">Districts ${builtN()} of 3</span>`}${dl.length ? ' · ' + dl.join(', ') : ''}</div>` + questLines();
+  $('party').innerHTML = MEMBERS.map(m => { const g = G.party[m] !== 'ok', h = G.hurt[m];
+    return `<a class="${g ? 'fallen' : h ? 'hurt' : ''}">${nm(m)}${h && !g ? '<span class="hw">wounded</span>' : ''}${G.party[m] === 'fallen' ? '<span class="hw">fell at Midwinter</span>' : ''}${G.loyal[m] != null && !g ? `<span class="pips">${'♥'.repeat(G.loyal[m])}<i>${'♥'.repeat(5 - G.loyal[m])}</i></span>` : ''}</a>`; }).join('');
+  $('fac').innerHTML = Object.keys(G.fac).map(k => { const f = G.fac[k];
+    return f.here ? `<span>${S(k).short} <span class="h">${'♥'.repeat(f.h)}</span></span>` : `<span class="away">${k === 'guild' ? 'Guild: not yet' : k === 'fen' ? 'Fen-folk: not yet' : S(k).short + ': gone'}</span>`; }).join('');
+}
+function questLines() {
+  const L = [];
+  const Q = {wreck: ['The Frozen Wreck', 'salvage the barge, west'], masons: ['Masons for Hire', 'Oakwell: 4 Coin and a Guild letter'],
+    plans: ['Thornmere\'s Plans', 'carry them home'], eel: ['The Eel-King\'s Price', 'clear the Barrow under the Ice'],
+    monks: ['The Monks\' Escort', 'two monks to bring home'], hermit: ['The Last Hermit\'s Tale', 'the saint\'s lamp, from the Frozen Shrine']};
+  for (const k in Q) if (G.q[k] === 'open' || G.q[k] === 'carrying') L.push(`<div class="q"><b>${Q[k][0]}</b> · ${Q[k][1]}</div>`);
+  if (G.intel.length) L.push(`<div class="q">The Host: ${G.intel.map(t => S2.threats[t].name).join('; ')}</div>`);
+  return L.slice(0, 4).join('');
+}
+async function choose(c) {
+  if (G.busy) return;
+  const lock = c.off || (c.who && !has(c.who)) || !can(c.c); if (lock) return;
+  A.sfx('click'); if (window.BOT) G.log.push(`D${G.day} ${G.scene}: ${c.t} | B${G.res.Bread} T${G.res.Timber} S${G.res.Stone} C${G.res.Coin} W${G.res.Ward} P${G.people} M${G.militia} | built ${builtN()}`);
+  busy(true); try { await c.go(); } catch (e) { console.error(e); if (window.BOT) G.log.push('ERROR ' + e.message); } busy(false); render();
+}
+const msg = (title, body, notes, next, label = 'Continue', kind = '') => show({kind, title, body: body + (notes && notes.length ? `<div class="cap" style="margin-top:10px;color:#ffd890">${notes.join(' · ')}</div>` : ''), ch: [{t: label, id: 'continue', go: next}]});
+
+/* ------------------------------------------------------------------ the timing strike (as in Season 1) */
+function strike(m, stat, label) {
+  if (window.BOT) { const r = Math.random() + (CO[m].stats[stat] - 3) * .08; return Promise.resolve(r > .75 ? 'great' : r > .3 ? 'good' : 'miss'); }
+  const v = CO[m].stats[stat] || 2, el = $('strike'), zw = 10 + v * 6, zc = 30 + Math.random() * 40;
+  el.innerHTML = `<div class="lbl">${nm(m)}: ${label} <span style="color:#cbbd9f">· ${stat} ${'■'.repeat(v)}</span></div><div class="bar"><div class="zone" style="left:${zc - zw / 2}%;width:${zw}%"></div><div class="mk"></div></div><div class="res"></div><div class="hint">click, or press Space, when the marker is in the gold</div>`;
+  el.style.display = 'block'; const mk = el.querySelector('.mk'), res = el.querySelector('.res'); const t0 = performance.now(); let done = false; A.sfx('page');
+  return new Promise(resolve => {
+    (function frame() { if (done) return; const ph = ((performance.now() - t0) / 900) % 2, pos = (ph < 1 ? ph : 2 - ph) * 100; mk.style.left = pos + '%'; mk.dataset.pos = pos; requestAnimationFrame(frame); })();
+    G.striking = () => { if (done) return; done = true; G.striking = null; const d = Math.abs(+mk.dataset.pos - zc), q = d < zw * .18 ? 'great' : d < zw / 2 ? 'good' : 'miss';
+      res.textContent = {great: 'Perfect!', good: 'Good.', miss: 'Missed…'}[q]; res.style.color = {great: '#fff0a0', good: '#ffd27a', miss: '#ff8a70'}[q];
+      A.sfx(q === 'miss' ? 'loss' : q === 'great' ? 'ward' : 'click'); setTimeout(() => { el.style.display = 'none'; resolve(q); }, 650); };
+    el.onclick = () => G.striking && G.striking();
+  });
+}
+cv.addEventListener('mousedown', () => G.striking && G.striking());
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); if (G.striking) G.striking(); else $('stage').classList.add('peek'); } if (e.key === 'm' || e.key === 'M') A.toggle(); });
+addEventListener('keyup', e => { if (e.code === 'Space') $('stage').classList.remove('peek'); });
+
+/* ------------------------------------------------------------------ the day: council, home, the roads */
+async function morning() {
+  if (G.day >= S2.siegeDay) return nightOne();
+  G.builtToday = false; G.usedToday = {};
+  await goScene('council', 'home', ['fire', 'murmur']);
+  const pool = S2.council.filter(m => (m.by === 'any' || (G.fac[m.by] && G.fac[m.by].here)) && !G.once['c_' + m.title]);
+  const m = pool.length ? pick(pool) : null;
+  if (!m) return home();
+  G.once['c_' + m.title] = 1;
+  const by = m.by === 'any' ? pick(facHere()) : m.by, sp = S(by);
+  show({kind: `MORNING COUNCIL · DAY ${G.day}`, title: m.title, body: m.body, barks: [[sp.short, `"${m.title === 'A Loan' ? 'Think on it, Warden.' : 'Well, Warden?'}"`]],
+    cap: 'The speakers wait.', ch: m.ch.map(c => ({...c, id: 'council', fxv: c.fx, go: async () => {
+      if (c.who && c.who === 'm_tracker') { const q = await strike('m_tracker', 'Stealth', 'Run them down'); if (q === 'miss') { const n = fx({res: {Timber: -1}}); return msg('They get away', 'Ness loses them in the dark of the woods.', n, home); } }
+      const n = fx(c.fx); const others = facHere().filter(k => k !== by);
+      const react = others.map(k => { const d = (c.fx.fac || {})[k] || 0; return [S(k).short, d > 0 ? 'nods.' : d < 0 ? 'says nothing, and leaves early.' : 'shrugs.']; });
+      show({kind: `MORNING COUNCIL · DAY ${G.day}`, title: m.title, body: 'It is decided.', barks: react, cap: n.join(' · '), ch: [{t: 'Out into the city', id: 'continue', go: home}]});
+    }}))});
+}
+
+async function home() {
+  await goScene('works', 'home', ['fire', 'wind']);
+  const n = [];
+  if (G.day === 2 && !G.q.wreck) { G.q.wreck = 'open'; G.flags.wreck = 1; return msg('A Bargeman at the Gate', 'A bargeman stands at the Gate, white with frost. His barge froze in the river west of here, cargo and all, and the ice is crushing her. "Timber, Warden. Good dry beams. Help me get it off and my lads are yours."', ['New quest: The Frozen Wreck'], home); }
+  if (G.carry.plans) { G.carry.plans = 0; G.q.plans = 'done'; fx({unlock: ['yard'], flag: {plansHome: 1}}, n); n.push('the Gatehouse needs 1 less Stone'); }
+  if (G.carry.monks) { G.carry.monks = 0; G.q.monks = 'done'; fx({unlock: ['chapel'], people: 2}, n); heart('faithful', 1, n); }
+  if (G.carry.eelDone && !G.fac.fen.here) { G.carry.eelDone = 0; arrive('fen', n); }
+  if (n.length) return msg('Home Again', 'The city has news for you.', n, home);
+  const builds = Object.keys(S2.districts).filter(d => G.unlocked[d] && !G.built[d]);
+  const ch = [];
+  const unbuilt = Object.keys(S2.districts).filter(d => !G.built[d]);
+  if (unbuilt.length) ch.push({t: 'Raise a district', s: (builds.length ? 'Ready: ' + builds.map(d => S2.districts[d].building).join(', ') : 'None unlocked yet · see how to unlock them') + (G.builtToday ? ' · one a day' : ''),
+    id: 'build', off: G.builtToday ? 'The townsfolk raised one today' : null, go: buildMenu});
+  if (G.carry.lamp && !G.unlocked.chapel) ch.push({t: 'Give the saint\'s lamp to the city', s: 'A relic: the Chapel can be raised', id: 'relic',
+    go: () => { G.carry.lamp = 0; G.flags.relic = 1; const n = []; unlock('chapel', n); if (G.q.hermit === 'open') { G.q.hermit = null; n.push('the hermit will not get his lamp'); } msg('A Relic for Ravenwick', 'The lamp is set in a niche by the Gate, and people come to look at it all day.', n, home); }});
+  for (const d of ['square', 'chapel', 'yard', 'stores']) if (G.built[d] && !G.usedToday[d]) ch.push({t: `Walk to ${S2.districts[d].name}`, s: S2.districts[d].daily, id: 'visit_' + d, go: () => visitDistrict(d)});
+  ch.push({t: `Townsfolk: ${S2.work[G.work].t.toLowerCase()}`, s: 'Change the work · ' + S2.work[G.work].s, id: 'work', go: workMenu});
+  ch.push({t: 'Set out on the roads', s: `The Company goes; the city works without you`, id: 'roads', go: crossroads});
+  ch.push({t: 'Stay in the city today', s: 'The wounded rest; the day passes', id: 'rest', go: () => nightfall(1, 'You spend the day on the walls with the townsfolk.')});
+  show({kind: `RAVENWICK · DAY ${G.day}`, title: 'Raising the Gate', body: `${G.people} people, ${G.militia ? G.militia + ' of them drilled as militia, ' : ''}and the first snows already deep. They eat ${need()} Bread a day. Every third night the city burns 1 Timber, or people fall sick.`, cap: (builtN() < 3 ? `Raise ${3 - builtN()} more ${3 - builtN() === 1 ? 'district' : 'districts'} by Midwinter to make Ravenwick a City.` : 'Ravenwick is a City. Now it must hold.') +
+    (G.day >= 10 ? ` For the long dark at Midwinter, put by ${G.built.stores ? 'no Bread (the Granary feeds everyone)' : need() + ' Bread'} and 2 Timber.` : ''), ch});
+}
+function buildMenu() {
+  const ch = Object.keys(S2.districts).filter(d => !G.built[d]).map(d => { const D = S2.districts[d], c = costOfD(d);
+    return {t: `${D.building} in ${D.name}`, s: G.unlocked[d] ? `${cost(c)} · In the siege: ${D.siege}` : `${cost(c)} · ${D.why}`, c: G.unlocked[d] ? c : null, off: G.unlocked[d] ? null : `Not yet · ${cost(c)} · ${D.why}`, id: 'build_' + d, d, go: () => build(d)}; });
+  ch.push({t: 'Not now', id: 'back', go: home});
+  show({kind: 'RAVENWICK', title: 'Raise a District', body: 'Each district is a building and the street around it. Three make Ravenwick a City.', ch});
+}
+const costOfD = d => { const c = {...S2.districts[d].cost}; if (d === 'gate' && G.flags.plansHome) c.Stone = Math.max(1, c.Stone - 1); return c; };
+async function build(d) {
+  pay(costOfD(d)); G.built[d] = 1; G.builtToday = true; A.sfx('build');
+  const D = S2.districts[d]; await goScene(D.scene, 'home', ['murmur', 'wind']);
+  msg(`The ${D.building} Stands`, `${D.name[0].toUpperCase() + D.name.slice(1)} fills with people by evening. ${D.daily} In the siege: ${D.siege}`, [builtN() >= 3 ? 'Three districts: Ravenwick is a City' : `Districts ${builtN()} of 3`], home);
+}
+function workMenu() {
+  show({kind: 'RAVENWICK', title: 'The Day\'s Work', body: 'The council decides where the townsfolk work. It holds until you change it.',
+    ch: [...Object.keys(S2.work).map(k => ({t: S2.work[k].t, s: S2.work[k].s, id: 'work_' + k, go: () => { G.work = k; return home(); }})), {t: 'Leave it as it is', id: 'back', go: home}]});
+}
+async function visitDistrict(d) {
+  const D = S2.districts[d]; await goScene(D.scene, 'home', ['murmur', 'wind']);
+  const back = {t: 'Back to the Gate', id: 'back', go: home};
+  const used = (n, e) => { G.usedToday[d] = 1; const notes = fx(e); msg(D.name[0].toUpperCase() + D.name.slice(1), n, notes, home); };
+  const V = {
+    square: {title: 'Market Day', body: 'Stalls in the snow, a crier with the day\'s rumours. The Guild\'s scales are honest, mostly.',
+      ch: [{t: 'Buy stone', s: '2 Coin → 1 Stone', c: {Coin: 2}, id: 'sq_stone', go: () => used('A carter brings it round by noon.', {res: {Coin: -2, Stone: 1}})},
+           {t: 'Buy bread', s: '1 Coin → 2 Bread', c: {Coin: 1}, id: 'sq_bread', go: () => used('Hollin flour, at Hollin prices.', {res: {Coin: -1, Bread: 2}})},
+           {t: 'Listen to the crier', s: 'Rumours of the Host', id: 'sq_rumour', off: G.intel.length >= 3 ? 'You know all he knows' : null, go: () => used('A pedlar from the north swears to what he saw.', {intel: 1})}, back]},
+    chapel: {title: 'Vespers', body: 'The chapel lamps are lit. Mother Ysolde tends the sick in the hospice.',
+      ch: [{t: 'Pray with the Faithful', s: '+1 Ward', id: 'ch_pray', go: () => used('The bell rings. The dark feels a little further off.', {res: {Ward: 1}, fac: {faithful: 1}})}, back]},
+    yard: {title: 'The Drill Ground', body: 'Two ranks of townsfolk with spears, a sergeant shouting, the forge going.',
+      ch: [{t: 'Drill the townsfolk hard', s: '2 Bread → +2 militia', c: {Bread: 2}, id: 'yd_drill', go: () => used('By dusk they keep their line.', {res: {Bread: -2}, militia: 2})}, back]},
+    stores: {title: 'The Smokehouse', body: 'The granary on its staddle stones, fish drying on the racks, smoke out of every gap.',
+      ch: [{t: 'Salt and smoke fish', s: '1 Timber → 3 Bread', c: {Timber: 1}, id: 'st_smoke', go: () => used('The racks fill. It smells like the Fens.', {res: {Timber: -1, Bread: 3}})}, back]},
+  }[d];
+  show({kind: 'RAVENWICK', ...V});
+}
+
+/* ------------------------------------------------------------------ the roads */
+const tripDays = p => { const P = S2.places[p]; return P.road === 'west' && P.days > 1 && G.flags.iceRoad ? 1 : P.days; };
+async function crossroads() {
+  await goScene('crossroads_w', 'road', ['wind']);
+  const ch = [];
+  for (const r in S2.roads) for (const p of S2.roads[r].places) {
+    const P = S2.places[p], d = tripDays(p);
+    let off = null;
+    if (P.needs === 'toll' && !G.flags.toll) off = 'Past the Toll Bridge: clear the bridge first';
+    if (P.needs === 'wreck' && !G.flags.wreck) off = 'Nothing to go there for yet';
+    if (P.needs === 'wreck' && G.q.wreck === 'done') off = 'The wreck is stripped bare';
+    if (G.day + d > S2.siegeDay) off = 'Too far now: the Host will be here first';
+    ch.push({t: `${P.title}`, s: `${S2.roads[r].name.split(' · ')[0]} · ${d} ${d === 1 ? 'day' : 'days'} · ${P.hint}`, off, id: 'go_' + p, p, go: () => setOut(p)});
+  }
+  ch.push({t: 'Back to Ravenwick', id: 'back', go: home});
+  show({kind: 'THE CROSSROADS', title: 'Where the Roads Part', body: 'Three roads leave the moor under the northern lights: north into the Spires, east along the King\'s Road, west onto the frozen Fens.', ch});
+}
+async function setOut(p) {
+  const P = S2.places[p]; G.trip = {p, days: tripDays(p), done: {}};
+  G.visits[p] = (G.visits[p] || 0) + 1; A.sfx('depart');
+  await goScene(p, P.mood, P.amb);
+  show(place(p));
+}
+const homeBtn = () => ({t: `Head home`, s: `${G.trip.days} ${G.trip.days === 1 ? 'day' : 'days'} gone, all told`, id: 'home', go: () => nightfall(G.trip.days, null)});
+// a deed: once per visit, maybe a timing strike, then an outcome shown in the panel with the place's other options still there
+function deed(id, t, s, who, stat, label, fn, extra = {}) {
+  return {t, s, who, id, c: extra.c, off: G.trip.done[id] ? 'Done' : extra.off, go: async () => {
+    G.trip.done[id] = 1; let q = 'good';
+    if (who && stat) q = await strike(who, stat, label);
+    const [title, body, e] = fn(q); const n = fx(e);
+    show({...place(G.trip.p), title, body, cap: n.join(' · ')});
+  }};
+}
+function place(p) {
+  const P = S2.places[p], v = {kind: P.kind, title: P.title, ch: []};
+  const first = G.visits[p] === 1;
+  const D = (...a) => v.ch.push(deed(...a));
+  if (p === 'cairn') {
+    v.body = 'The cairn stands on the summit with its torn pennants streaming east. Below you the cloud lies like a sea, and through the gaps, far down, the Host\'s fires.';
+    D('cairn_count', 'Creep down through the cloud and count them', 'Learn how they mean to attack', 'm_tracker', 'Stealth', 'Down through the cloud', q =>
+      q === 'miss' ? ['Seen', 'A sentry shouts. Ness comes back up the scree with an arrow in her arm, and one thing learned.', {intel: 1, hurt: ['m_tracker']}]
+        : ['Counted', q === 'great' ? 'Ness is gone until dark and comes back grinning. She has been right among them.' : 'Ness comes back blue with cold, but she has seen it.', {intel: q === 'great' ? 2 : 1}],
+      {off: G.intel.length >= 3 ? 'You know all their plans' : null});
+    D('cairn_stone', 'Add a stone to the cairn', 'The Watchers kept this place for a hundred years', null, null, null, () => ['A Stone for the Watchers', 'Wren sets a stone on the cairn. The Company stands a while in the wind.', {res: {Ward: 1}}]);
+  } else if (p === 'frozen_shrine') {
+    if (G.flags.shrineDark && !G.flags.shrineClean) {
+      v.body = 'The ice cave is cold and wrong. The candles at the saint\'s feet are out, and something has nested in the dark behind the pillar.';
+      D('sh_cleanse', 'Drive it out with the old words', 'Aldous and a Ward', 'm_cleric', 'Faith', 'The old words', q => q === 'miss'
+        ? ['It Will Not Go', 'The thing hisses and the candles will not light. Aldous comes away shaking.', {hurt: ['m_cleric'], res: {Ward: -1}}]
+        : ['Cleansed', 'The candles catch. Whatever it was goes out through the crack in the roof with a sound like wind.', {flag: {shrineClean: 1}, fac: {faithful: 2}, res: {Ward: -1}}], {c: {Ward: 1}});
+    } else {
+      v.body = 'Light pours through a crack in the roof of the ice cave. The saint stands frozen in a pillar of ice, the Spire held up, candles still burning at her feet. Someone shelters here.';
+      D('sh_pray', 'Pray at the saint\'s feet', '+2 Ward', 'm_cleric', null, null, () => ['The Saint Hears', 'Aldous prays until the candles gutter. The Company leaves lighter.', {res: {Ward: 2}, fac: {faithful: 1}}]);
+      if (!G.carry.lamp && G.q.hermit !== 'done' && !G.flags.lampTaken)
+        D('sh_lamp', 'Take the saint\'s lamp', G.q.hermit === 'open' ? 'For the hermit · the Faithful will not like it' : 'A holy relic · the Faithful will not like it', null, null, null,
+          () => { G.carry.lamp = 1; G.flags.lampTaken = 1; return ['The Lamp', 'Wren lifts the little iron lamp from the ice. It is still warm.', {fac: {faithful: -1}}]; });
+    }
+  } else if (p === 'hermit') {
+    v.body = 'The blizzard takes everything but one lit window. The hermit stands in his doorway with a lantern, as if he expected you.';
+    if (!G.q.hermit) { G.q.hermit = 'open'; v.barks = [['The hermit', '"I know how they think. Bring me the lamp from the saint in the ice, and I will tell you all of it."']]; }
+    if (G.carry.lamp && G.q.hermit === 'open') D('he_give', 'Give him the saint\'s lamp', 'He will tell you how the Host means to attack', null, null, null,
+      () => { G.carry.lamp = 0; G.q.hermit = 'done'; return ['The Hermit\'s Tale', 'He holds the lamp a long time. Then he tells you everything: where, and how, and in what order.', {intel: 3}]; });
+    D('he_warm', 'Sit by his fire a while', 'The wounded rest', null, null, null, () => { const healed = Object.keys(G.hurt).length; G.hurt = {}; return ['By the Fire', healed ? 'The hermit knows herbs. The wounded sleep, and wake better.' : 'He talks about the Watchers, and the old king, and snow.', {}]; });
+  } else if (p === 'oakwell') {
+    v.body = 'Oakwell at a frosty noon: honey-stone towers along a running river, the masons\' crane over the guild hall, carts on every road.';
+    if (!G.fac.guild.here) { const n = []; arrive('guild', n); v.barks = [['Corwen Tally', '"Ravenwick? Then you will need a market, and safe roads, and fair weights. The Hollin Guild will come and see."']]; v.cap = n.join(' · '); }
+    if (!G.q.masons) G.q.masons = 'open';
+    D('ok_stone', 'Buy dressed stone', '2 Coin → 2 Stone', null, null, null, () => ['Stone', 'The quarrymen load a cart for you.', {res: {Coin: -2, Stone: 2}}], {c: {Coin: 2}});
+    D('ok_timber', 'Hire carters for timber', '1 Coin → 2 Timber', null, null, null, () => ['Timber', 'Oak beams from the woods, roped on a sledge.', {res: {Coin: -1, Timber: 2}}], {c: {Coin: 1}});
+    if (G.q.masons === 'open') D('ok_masons', 'Hire masons for the Garrison Hall', '4 Coin and a letter from the Guild', 'm_banner', null, null,
+      () => { G.q.masons = 'done'; return ['Masons for Hire', 'Two masons and their boys will walk to Ravenwick tomorrow, with their tools.', {res: {Coin: -4}, unlock: ['yard'], people: 2}]; },
+      {c: {Coin: 4}, off: G.fac.guild.h < 2 ? 'Needs the Guild\'s letter (2 hearts)' : null});
+  } else if (p === 'thornmere') {
+    v.body = 'Freezing fog. The citadel\'s broken towers stand in the frozen mere, half swallowed by thorns furred white with rime.';
+    const left = 3 - (G.flags.salvaged || 0);
+    D('th_salvage', 'Haul out dressed stone', left > 0 ? `${left} good loads left` : 'Picked clean', 'm_captain', 'Might', 'Lift', q => { G.flags.salvaged = (G.flags.salvaged || 0) + 1;
+      return q === 'miss' ? ['It Shifts', 'A wall comes down. Brannoc gets clear, mostly.', {res: {Stone: 1}, hurt: ['m_captain']}] : ['Salvage', 'Old stone, cut square by better masons than anyone living.', {res: {Stone: q === 'great' ? 3 : 2, Timber: 1}}]; },
+      {off: left <= 0 ? 'Nothing left worth carrying' : null});
+    if (!G.q.plans && !G.flags.plansHome) D('th_plans', 'Search the keep for the old builders\' plans', 'Ness reads the ruin', 'm_tracker', 'Wits', 'Search', q => {
+      if (q === 'miss') return ['Nothing', 'Rooms full of snow and crows.', {}];
+      G.q.plans = 'carrying'; G.carry.plans = 1; return ['Thornmere\'s Plans', 'In a lead box under the chapel floor: the plans for a garrison hall, and the gatehouse they never finished.', {}]; });
+  } else if (p === 'toll_bridge') {
+    const who = G.flags.bridgeHeld || 'men in red masks';
+    v.body = `A street of lit houses built over the gorge, a frozen waterfall behind it, and a chain across the road. The bridge is held by ${who}.`;
+    if (G.flags.toll) { v.body += ' The chain is down for you now.'; }
+    else {
+      const open = (title, body, e) => { G.flags.toll = 1; return [title, body, {...e, fac: {guild: 1}}]; };
+      D('tb_pay', 'Pay the toll', '2 Coin', null, null, null, () => open('Paid', 'The chain drops. A masked man bows too low.', {res: {Coin: -2}}), {c: {Coin: 2}});
+      D('tb_talk', 'Talk them round', 'Wits', 'm_banner', 'Wits', 'Parley', q => q === 'miss' ? ['No', 'They laugh. You pay in the end, and more.', {res: {Coin: -3}, flag: {toll: G.res.Coin >= 3 ? 1 : 0}}]
+        : open('Talked Round', 'Wren reminds them who will be holding the Spires when the Host has gone. The chain drops.', {}));
+      D('tb_force', 'Force the chain', 'Might', 'm_captain', 'Might', 'At the chain', q => q === 'miss' ? ['Driven Back', 'Brannoc takes a spear in the shoulder. The chain stays up.', {hurt: ['m_captain']}]
+        : open('The Bridge Is Clear', 'Brannoc breaks the chain and the keepers scatter across the roofs.', {res: {Coin: q === 'great' ? 2 : 0}}));
+    }
+  } else if (p === 'monastery') {
+    v.body = 'Monasteries on the tops of stone needles, above a pink sea of valley mist. A basket comes down on a rope to meet you.';
+    if (!G.q.monks) { G.q.monks = 'open'; v.barks = [['The abbot', '"Two of ours would go to your city, to tend the sick. Will you see them safely there?"']]; }
+    if (G.q.monks === 'open' && !G.carry.monks) D('mo_escort', 'Take the two monks with you', 'The Chapel can be raised when they arrive', null, null, null, () => { G.carry.monks = 1; return ['The Monks\' Escort', 'Brother Tam and Brother Owl, with a mule and a great many books.', {}]; });
+    D('mo_heal', 'Ask for their herbs', 'The wounded are tended', null, null, null, () => { G.hurt = {}; return ['Herbs', 'Bitter tea and clean bandages.', {}]; });
+  } else if (p === 'frozen_wreck') {
+    v.body = 'Thundersnow. The river has heaved up into slabs, and the barge stands nearly on end among them, her hull splitting. Her beams are good and dry.';
+    D('wr_haul', 'Get the cargo off before she breaks', 'Might', 'm_captain', 'Might', 'Haul', q => { G.q.wreck = 'done';
+      return q === 'miss' ? ['She Goes', 'The barge rolls as Brannoc is in her hold. He gets out; most of the beams don\'t.', {res: {Timber: 1}, people: 3, hurt: ['m_captain']}]
+        : ['Salvaged', 'Beams, barrels and the bargeman\'s crew, all of it home by sledge.', {res: {Timber: q === 'great' ? 5 : 4}, people: 3}]; }, {off: G.q.wreck === 'done' ? 'Done' : null});
+    D('wr_safe', 'Take only what has spilled onto the ice', 'Safe', null, null, null, () => { G.q.wreck = 'done'; return ['Scraps', 'A few beams and a barrel of tar. The bargeman\'s crew come with you anyway.', {res: {Timber: 2}, people: 3}]; }, {off: G.q.wreck === 'done' ? 'Done' : null});
+  } else if (p === 'thin_ice') {
+    v.body = 'Black ice as still as glass, the whole sky in it. Marker poles lead out to an island with one tree. A guide is already out there, testing.';
+    if (G.flags.iceRoad) v.body += ' Your poles still stand: the far Fens are a day closer.';
+    else D('ti_mark', 'Mark a safe way across', 'The far Fens become a day closer', 'm_tracker', 'Stealth', 'Read the ice', q => {
+      if (q === 'miss' && !G.flags.boats) { const m = pick(MEMBERS.filter(has)); const lost = G.carry.plans; if (lost) { G.carry.plans = 0; G.q.plans = null; }
+        return ['Through the Ice', `${nm(m)} goes through. They pull ${m === 'm_tracker' ? 'her' : 'him'} out blue and gasping${lost ? ', and the plans from Thornmere go down into the black water' : ''}.`, {hurt: [m], flag: {iceRoad: 1}}]; }
+      return ['A Way Across', 'Pole by pole, Ness finds the thick ice. Tomorrow the far Fens are a day closer.', {flag: {iceRoad: 1}}]; });
+    D('ti_fish', 'Cut a hole and fish', '+2 Bread', null, null, null, () => ['Fish', 'Pike, under all that glass.', {res: {Bread: 2}}]);
+  } else if (p === 'barrow') {
+    v.body = 'Through clear black ice you can see it: the drowned barrow, its standing stones, and a door glowing green far down. A stair has been cut into the ice.';
+    const clear = (title, body, e) => { G.flags.barrowClear = 1; if (G.q.eel === 'open') { G.q.eel = 'done'; G.carry.eelDone = 1; } return [title, body, e]; };
+    if (G.flags.barrowClear) v.body += ' The green light is gone now.';
+    else {
+      D('ba_fight', 'Go down and face what is there', 'Might', 'm_captain', 'Might', 'In the dark', q => q === 'miss' ? ['Driven Out', 'Something cold takes hold of Brannoc. Ness drags him back up the stair.', {hurt: ['m_captain']}]
+        : clear('The Barrow Is Quiet', 'Brannoc comes up the stair with frost in his beard and says nothing about it, ever.', {}));
+      D('ba_ward', 'Seal the door with a Ward', 'Aldous · 1 Ward', 'm_cleric', 'Faith', 'The sealing', q => q === 'miss' ? ['It Holds Against Him', 'The Ward breaks on the door like a wave.', {res: {Ward: -1}}]
+        : clear('Sealed', 'The green light shrinks to a point, and goes out.', {res: {Ward: -1}, fac: {faithful: 1}}), {c: {Ward: 1}});
+    }
+    if (G.flags.barrowClear && !G.flags.graveGoods) D('ba_goods', 'Take the grave goods', '+3 Coin · the Faithful will hear of it', null, null, null, () => { G.flags.graveGoods = 1; return ['Grave Goods', 'Old gold, green with the water.', {res: {Coin: 3}, fac: {faithful: -1}}]; });
+  } else if (p === 'eel_hall') {
+    v.body = 'A hall shaped like an upturned boat, on stilts over a steaming black channel. Lanterns everywhere in the reeds. The Eel-King keeps court inside.';
+    if (!G.q.eel && !G.fac.fen.here) {
+      if (G.flags.barrowClear) { G.q.eel = 'done'; G.carry.eelDone = 1; v.barks = [['The Eel-King', '"You quieted the barrow without being asked. My people will go to your city."']]; }
+      else { G.q.eel = 'open'; v.barks = [['The Eel-King', '"Something wakes in the old barrow under the ice. Quiet it, and the Fen-folk will come to Ravenwick."']]; }
+    }
+    D('ee_trade', 'Trade for smoked eel', '1 Coin → 3 Bread', null, null, null, () => ['Smoked Eel', 'Black, oily and very good.', {res: {Coin: -1, Bread: 3}}], {c: {Coin: 1}});
+  }
+  v.ch.push(homeBtn());
+  return v;
+}
+
+/* ------------------------------------------------------------------ nights */
+async function nightfall(days, text) {
+  const notes = [];
+  for (let i = 0; i < days; i++) passDay(notes, i === days - 1 && days === 1 && G.scene === 'works');
+  if (G.view && G.view.title && text === null && G.trip) {
+    const P = S2.places[G.trip.p]; text = `The Company comes home from ${P.title} after ${days === 1 ? 'a day' : days + ' days'} on the road.`; G.trip = null;
+  }
+  await goScene('works', 'home', ['fire', 'wind']);
+  msg('Nightfall', text || '', notes, morning, 'Sleep');
+}
+function passDay(notes, rested) {
+  const W = S2.work[G.work].res; for (const k in W) G.res[k] += W[k];   // the day's work comes in before supper
+  if (G.built.square) G.res.Coin += 1;
+  if (G.built.stores) G.res.Bread += 2;
+  const n = need();
+  if (G.res.Bread >= n) G.res.Bread -= n;
+  else { G.res.Bread = 0; G.people = Math.max(0, G.people - 2); notes.push('Not enough bread: 2 people leave for the south'); const fs = facHere(); if (fs.length) heart(pick(fs), -1, notes); }
+  if (G.built.yard && G.militia < Math.floor(G.people / 3)) G.militia += 1;
+  if (G.built.gate && G.day % 2 === 0) { G.people += 1; notes.push('newcomers at the Gate (+1)'); }
+  if (G.built.chapel || rested) G.hurt = {};
+  if (G.day % 3 === 0) {
+    if (G.res.Timber >= 1) { G.res.Timber -= 1; notes.push('the city burns 1 Timber against the cold'); }
+    else { G.people = Math.max(0, G.people - 1); notes.push('no firewood: the cold takes someone'); heart('faithful', -1, notes); }
+  }
+  G.day += 1;
+}
+
+/* ------------------------------------------------------------------ the Midwinter siege */
+async function nightOne() {
+  await goScene('siege_warning', 'tension', ['gale', 'fire']); A.sfx('rumble');
+  const known = G.intel.map(t => S2.threats[t]);
+  const body = 'The beacon on the tower is lit. Down the mountain comes a river of torches: the Host, in earnest.' +
+    (known.length ? ` You know what they bring: ${known.map(t => t.name).join('; ')}.` : ' You do not know how they mean to come at you.');
+  const ch = G.intel.map(t => ({t: S2.threats[t].prep, s: `Against ${S2.threats[t].name}`, id: 'prep_' + t, go: () => { G.prep = t; return nightTwo(); }}));
+  ch.push({t: 'Double the watch on every wall', s: 'A little help everywhere', id: 'prep_none', go: () => { G.prep = null; return nightTwo(); }});
+  show({kind: 'MIDWINTER · NIGHT ONE', title: 'The Warning', body, cap: 'One night to prepare. What do you do with it?', ch});
+}
+async function nightTwo() {
+  G.day = S2.siegeDay + 1; await goScene('siege_assault', 'tension', ['fire', 'gale']); A.sfx('clash');
+  G.posts = {}; const free = MEMBERS.filter(has);
+  const ask = i => {
+    if (i >= free.length) { show({kind: 'MIDWINTER · NIGHT TWO', title: 'Hold the Line', body: 'They come over the walls. Click, or press Space, when the marker is in the gold.', ch: []}); return assault(); }
+    const m = free[i];
+    show({kind: 'MIDWINTER · NIGHT TWO', title: 'The Assault', body: 'Ladders against the walls, a ram at the Gate, fire arrows over the roofs. Where do you send each of the Company?',
+      cap: `Where does ${nm(m)} stand?`, ch: Object.keys(S2.posts).map(k => { const P = S2.posts[k], v = CO[m].stats[P.stat];
+        return {t: P.name[0].toUpperCase() + P.name.slice(1), s: `${P.stat} ${'■'.repeat(v)}${(G.posts[k] || []).length ? ' · with ' + G.posts[k].map(nm).join(', ') : ''}`, id: 'post_' + k, m, post: k,
+          go: () => { (G.posts[k] = G.posts[k] || []).push(m); return ask(i + 1); }}; })});
+  };
+  return ask(0);
+}
+async function assault() {
+  const striker = has('m_captain') ? 'm_captain' : MEMBERS.find(has);
+  const q = striker ? await strike(striker, 'Might', 'Hold the line') : 'miss';
+  const strikerPost = Object.keys(G.posts).find(k => G.posts[k].includes(striker));
+  const lines = [], fallen = []; let breaks = 0; let wards = G.res.Ward + (G.built.chapel ? 1 : 0);
+  for (const k in S2.posts) {
+    const P = S2.posts[k]; let s = 0;
+    for (const m of G.posts[k] || []) s += 1 + (CO[m].stats[P.stat] >= 4 ? 1 : 0);
+    if (k === 'wall') s += Math.floor(G.militia / 2) + (G.built.yard ? 1 : 0);
+    if (k === 'gate') s += Math.ceil(G.militia / 2) + (G.built.gate ? 2 : 0) + (G.built.yard ? 1 : 0);
+    if (k === 'stores') s += G.built.stores ? 2 : 0;
+    if (k === 'chapel') s += G.built.chapel ? 2 : 0;
+    if (G.prep && S2.threats[G.prep].post === k) s += 3; else if (!G.prep) s += 0.5;
+    if (k === strikerPost) s += q === 'great' ? 2 : q === 'good' ? 1 : -1;
+    const threatened = Object.keys(S2.threats).find(t => S2.threats[t].post === k);
+    const th = P.threat + (threatened && !G.intel.includes(threatened) ? 1 : 0);
+    while (s < th && wards > 0 && th - s <= 1) { wards--; s += 1; lines.push(`A Ward turns them back at ${P.name}`); }
+    if (s >= th) lines.push(`${P.name[0].toUpperCase() + P.name.slice(1)} holds.`);
+    else { breaks++; lines.push(`The line breaks at ${P.name}.`);
+      const there = G.posts[k] || []; if (there.length) { const m = there[0]; if (th - s >= 2 && m !== 'm_banner') { G.party[m] = 'fallen'; fallen.push(m); lines.push(`${nm(m)} falls there.`); } else { G.hurt[m] = 1; lines.push(`${nm(m)} is wounded.`); } } }
+  }
+  G.res.Ward = Math.max(0, Math.min(G.res.Ward, wards)); G.breaks = breaks; G.fallen = fallen;
+  if (fallen.length) A.sfx('hurt');
+  if (window.BOT) G.log.push(`ASSAULT q=${q} prep=${G.prep} posts=${JSON.stringify(G.posts)} | ${lines.join(' ')}`);
+  msg('The Assault', `${{great: 'The line holds like iron where ' + nm(striker) + ' stands.', good: nm(striker) + ' holds the line.', miss: 'The line wavers where ' + nm(striker) + ' stands.'}[q]} ${lines.join(' ')}`,
+    [`${breaks} ${breaks === 1 ? 'break' : 'breaks'} in the line`], nightThree, 'Through the night', 'MIDWINTER · NIGHT TWO');
+}
+async function nightThree() {
+  G.day = S2.siegeDay + 2; await goScene('siege_long_dark', 'eerie', ['wind']);
+  if (G.breaks >= 3) return finish();
+  const M = S2.darkMatter;
+  show({kind: 'MIDWINTER · NIGHT THREE', title: 'The Long Dark', body: 'The Host has drawn back to wait for the cold to finish what it started. No moon. Ice fog in the square. ' + M.body,
+    ch: M.ch.map(c => ({...c, id: 'dark', go: () => { G.darkNotes = fx(c.fx); return finish(); }}))});
+}
+async function finish() {
+  if (G.finished) return; G.finished = true;   // once only, whatever gets clicked twice
+  const eat = G.built.stores ? 0 : need(), warm = 2;
+  const notes = [...(G.darkNotes || [])]; let dark = 0;
+  if (window.BOT) G.log.push(`DARK bread=${G.res.Bread} need=${eat} timber=${G.res.Timber} people=${G.people}`);
+  if (G.res.Bread >= eat) G.res.Bread -= eat; else { dark++; G.people = Math.max(0, G.people - 4); notes.push('Hunger: 4 people die in the long dark'); }
+  if (G.res.Timber >= warm) G.res.Timber -= warm; else { dark++; G.people = Math.max(0, G.people - 3); notes.push('Cold: 3 people die in the long dark'); }
+  const city = builtN() >= 3, held = G.breaks <= 1, fell = G.breaks >= 3;
+  const win = city && held && dark === 0, partial = !win && city && !fell && (G.breaks <= 2) && dark <= 1;
+  const result = {win: win || partial, partial, districts: builtN(), breaks: G.breaks, dark, people: G.people, fallen: G.fallen, endDay: S2.maxDay};
+  saveChronicle(result);
+  if (window.BOT) G.log.push(`RESULT win=${win ? 1 : 0} partial=${partial ? 1 : 0} districts=${builtN()} breaks=${G.breaks} dark=${dark} people=${G.people} militia=${G.militia} intel=${G.intel.length} fallen=${(G.fallen || []).length} built=${Object.keys(G.built).filter(k => G.built[k]).join(',')}`);
+  await goScene(win || partial ? 'siege_warning' : 'siege_long_dark', win || partial ? 'home' : 'eerie');
+  const head = win ? 'Ravenwick Is a City' : partial ? 'Ravenwick Holds' : fell ? 'Ravenwick Falls' : !city ? 'Still a Holdfast' : 'The Long Night Wins';
+  const body = win ? 'Dawn comes up red over the Spires, and the Host is gone from the valley. Ravenwick has walls, districts and a council, and it held. The spring will come to a City.'
+    : partial ? 'It held, at a cost. The Host draws off at dawn, and Ravenwick is a City, scarred, but standing.'
+    : fell ? 'The line broke in too many places. By dawn the Host is inside the walls.'
+    : !city ? 'The walls held, but Ravenwick never became more than a holdfast. In spring the people drift south to Oakwell and Hollin.'
+    : 'The cold and the hunger did what the Host could not.';
+  show({kind: 'THE END OF SEASON 2', title: head, body, cap: notes.join(' · ') + (win || partial ? ' · Your Season 2 chronicle is saved.' : ''),
+    ch: [{t: 'Play the season again', id: 'again', go: () => location.reload()}]});
+  if (window.BOT) { G.log.push('BOTDONE'); window.BOTDONE = 1; }
+}
+
+/* ------------------------------------------------------------------ start */
+function splash() {
+  const el = $('story'); el.className = 'hud';
+  el.innerHTML = `<div class="k">SEASON 2</div><h2>The Long Night</h2><p>The beacon turned the Host back on the first night of winter, for now. Now Ravenwick must become a City: three districts, a council, and people enough to hold it, before the Host comes back in earnest at Midwinter.</p>
+    <p style="font-size:16px;color:#b5a88e">${G.from === 'chronicle' ? 'Continuing from your Season 1 chronicle.' : 'No Season 1 chronicle found: starting with the Company as they stood at the first snow.'}</p><div class="btns"><a id="begin">Begin</a></div>`;
+  el.style.display = 'block'; el.style.opacity = 1;
+  $('begin').onclick = () => { A.start && A.start(); A.sfx('click'); el.style.display = 'none'; morning(); };
+}
+const fit = () => $('stage').style.setProperty('--k', Math.min(innerWidth / 1280, innerHeight / 720)); addEventListener('resize', fit); fit();
+window.G = G; newSeason(); render(); requestAnimationFrame(loop);
+const hash = new URLSearchParams(location.hash.slice(1));
+if (hash.get('scene')) { G.scene = hash.get('scene'); show(S2.places[G.scene] ? (G.trip = {p: G.scene, days: 1, done: {}}, G.visits[G.scene] = 1, place(G.scene)) : null); }
+else splash();
+</script></body></html>
