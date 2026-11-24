@@ -1,0 +1,983 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Quests and Encounters · Season 1</title>
+<style>
+  html,body{margin:0;height:100%;background:#07060a;overflow:hidden}
+  #stage{position:absolute;width:1280px;height:720px;left:50%;top:50%;transform-origin:center;transform:translate(-50%,-50%) scale(var(--k,1))}
+  canvas{position:absolute;left:0;top:0;width:1281px;height:720px;image-rendering:pixelated}
+  #fade{position:absolute;inset:0;background:#07060a;opacity:0;transition:opacity .6s ease;pointer-events:none}
+  .hud{position:absolute;font-family:Georgia,'Iowan Old Style',serif;color:#f2e7d0;text-shadow:0 1px 1px #000,0 0 10px rgba(0,0,0,.9)}
+  #topshade{position:absolute;left:0;right:0;top:0;height:110px;background:linear-gradient(180deg,rgba(7,6,10,.5),rgba(7,6,10,0));pointer-events:none}
+  #top{z-index:2;left:30px;top:18px;right:30px;display:flex;justify-content:space-between;align-items:flex-start;font-size:17px;letter-spacing:.02em}
+  #res span{margin-right:20px;color:#cbbd9f}#res b{font-weight:normal;color:#fff;font-size:18px}
+  #res .lo b{color:#ff8a70}
+  #goal{text-align:right;line-height:1.5}
+  #goal .big{font-size:17px;color:#fbe9bd}#goal .sm{font-size:14px;color:#cbbd9f;font-style:italic}
+  #goal .done{color:#a6e0a0;font-style:normal}
+  #party{z-index:2;left:30px;top:50px;font-size:18px;color:#cbbd9f;display:flex;gap:20px;align-items:baseline}
+  #party a{cursor:pointer;color:#f2e7d0;border-bottom:1px dotted rgba(242,231,208,.4)}
+  #party a:hover{color:#ffd27a}
+  #party .hurt{color:#ff9f86}#party .gone{text-decoration:line-through;opacity:.45;pointer-events:none}
+  #party .pips{font-size:15px;color:#ff7d63;letter-spacing:1px;margin-left:5px}
+  #party .pips i{font-style:normal;color:rgba(255,125,99,.3)}
+  #party a.pulse{animation:pulse 1.6s ease-out}
+  @keyframes pulse{0%{transform:scale(1.35);color:#ffd27a;text-shadow:0 0 14px #ffb060}100%{transform:scale(1)}}
+  #party a{display:inline-block;transform-origin:left center}
+  #panel{position:absolute;right:0;top:0;bottom:0;width:410px;padding:0 38px 40px 62px;display:flex;flex-direction:column;justify-content:flex-end;box-sizing:border-box;
+    background:linear-gradient(90deg,rgba(7,6,10,0) 0%,rgba(7,6,10,.8) 16%,rgba(7,6,10,.9) 100%);transition:opacity .45s,transform .55s cubic-bezier(.4,0,.2,1)}
+  #panel.busy{opacity:0;transform:translateX(70px);pointer-events:none}
+  .peek #panel,.peek #top,.peek #party,.peek #map,.peek #snd,.peek #topshade,.peek #toast{opacity:0!important;pointer-events:none}
+  #panel,#top,#party,#map,#snd,#topshade{transition:opacity .4s}
+  .kind{font-size:13px;letter-spacing:.22em;color:#ff7d63;margin-bottom:8px}
+  h1{font-weight:normal;font-style:italic;font-size:36px;margin:0 0 12px;color:#fff3da;line-height:1.05}
+  .body{font-size:19px;line-height:1.5;color:#efe3ca;margin-bottom:8px}
+  .bark{font-size:17px;line-height:1.45;color:#e8c98a;font-style:italic;margin:4px 0 6px}
+  .bark b{font-style:normal;font-weight:normal;color:#ffd890}
+  .cap{font-size:14px;font-style:italic;color:#b5a88e;margin-bottom:18px;min-height:4px}
+  .ch{display:block;cursor:pointer;font-size:19px;color:#fff3da;padding:9px 0;border-top:1px solid rgba(242,231,208,.18);transition:color .15s,padding .15s}
+  .ch:hover{color:#ffd27a;padding-left:6px}
+  .ch small{display:block;font-size:14px;color:#bfb196;font-style:italic;margin-top:2px}
+  .ch.off{opacity:.38;pointer-events:none}
+  .ch .who{color:#e8b870;font-style:normal}
+  canvas.hot{cursor:pointer}
+  #map{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:2;overflow:visible}
+  #goal .step{font-style:normal;color:#fbe9bd}#goal .now{color:#ffd27a;font-style:normal}
+  .cine #top,.cine #party,.cine #map,.cine #snd,.cine #topshade{opacity:0;transition:opacity 1.2s}
+  #strike{position:absolute;left:50%;top:128px;transform:translateX(-50%);width:420px;z-index:5;display:none;text-align:center;font-family:Georgia,serif;color:#fff3da;
+    text-shadow:0 1px 1px #000,0 0 10px #000}
+  #strike .lbl{font-size:17px;font-style:italic;margin-bottom:8px}
+  #strike .bar{position:relative;height:18px;border:2px solid #efe2c8;background:rgba(7,6,10,.85);box-shadow:0 0 0 2px #000;image-rendering:pixelated}
+  #strike .zone{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,#8a6a20,#e8c050 40%,#fff0a0 50%,#e8c050 60%,#8a6a20)}
+  #strike .mk{position:absolute;top:-6px;bottom:-6px;width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 6px #fff,0 0 0 1px #000}
+  #strike .hint{font-size:13px;color:#cbbd9f;font-style:italic;margin-top:7px}
+  #strike .res{font-size:22px;font-style:italic;height:26px;margin-top:4px;color:#ffd27a}
+  #strike button{font-family:Georgia,serif;font-size:14px;background:rgba(7,6,10,.85);color:#fff3da;border:1px solid #efe2c8;padding:4px 14px;margin-top:8px;cursor:pointer}
+  #story{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);width:860px;text-align:center;z-index:6;display:none;transition:opacity .6s;
+    padding:22px 30px 18px;background:radial-gradient(ellipse at center,rgba(7,6,10,.82) 0%,rgba(7,6,10,.6) 60%,rgba(7,6,10,0) 100%)}
+  #story .k{font-size:13px;letter-spacing:.26em;color:#ff7d63}
+  #story h2{font-weight:normal;font-style:italic;font-size:42px;margin:6px 0 12px;color:#fff3da}
+  #story p{font-size:20px;line-height:1.55;color:#efe3ca;margin:0 auto 18px;max-width:760px}
+  #story .btns a{display:inline-block;cursor:pointer;margin:0 16px;font-size:17px;color:#ffd27a;border-bottom:1px dotted rgba(255,210,122,.5)}
+  #story .btns a.quiet{color:#b5a88e;font-size:15px}
+  #story .btns a:hover{color:#fff}
+  #story.card{left:70px;bottom:auto;top:170px;transform:none;width:560px;text-align:left;background:rgba(10,8,14,.94);border:1px solid rgba(242,231,208,.25);display:none}
+  #story.card .row{display:flex;gap:22px;align-items:flex-start}
+  #story.card canvas{position:static;width:160px;height:160px;image-rendering:pixelated;border:1px solid rgba(242,231,208,.3);flex:none}
+  #story.card h2{font-size:32px;margin:2px 0 4px}#story.card p{font-size:17px;margin:8px 0}
+  #story.card .sk{font-size:14px;color:#cbbd9f;font-style:italic}
+  #story.card .btns{margin-top:12px;text-align:right}
+  #tip{position:absolute;z-index:7;display:none;width:300px;background:#0e0c14;border:1px solid #ffd27a;padding:12px 15px 10px;font-size:15px;line-height:1.45;color:#fff3da;
+    box-shadow:0 6px 24px rgba(0,0,0,.6);font-family:Georgia,serif}
+  #tip b{font-weight:normal;color:#ffd27a}
+  #tip .arr{position:absolute;width:14px;height:14px;background:#0e0c14;border:1px solid #ffd27a;transform:rotate(45deg)}
+  #tip .tb{margin-top:8px;display:flex;justify-content:space-between;font-size:14px}
+  #tip .tb a{cursor:pointer;color:#ffd27a}#tip .tb a.quiet{color:#8f8474}
+  .cine #panel{opacity:0;pointer-events:none}
+  #toast{position:absolute;left:50%;top:104px;transform:translateX(-50%);font-size:16px;font-style:italic;color:#ffe0a0;opacity:0;transition:opacity .5s;white-space:nowrap;z-index:3;
+    background:rgba(7,6,10,.75);padding:6px 16px;border-radius:2px}
+  #snd{position:absolute;left:30px;top:88px;font-size:14px;color:#b5a88e;cursor:pointer;z-index:3}
+  #snd:hover{color:#ffd27a}
+  /* character sheet */
+  #sheet{position:absolute;left:50px;top:70px;width:720px;max-height:610px;overflow:auto;background:rgba(10,8,14,.96);border:1px solid rgba(242,231,208,.22);padding:26px 30px;display:none;z-index:4;
+    box-shadow:0 10px 40px rgba(0,0,0,.6)}
+  #sheet .row{display:flex;gap:26px}
+  #sheet canvas.pt{position:static;width:192px;height:192px;border:1px solid rgba(242,231,208,.3);image-rendering:pixelated;flex:none}
+  #sheet h2{margin:0;font-weight:normal;font-style:italic;font-size:32px;color:#fff3da}
+  #sheet .title{color:#ff9c7d;font-size:13px;letter-spacing:.18em;margin:4px 0 10px}
+  #sheet .bio{font-size:16px;line-height:1.5;color:#e6dac0;font-style:italic}
+  #sheet .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:18px 0 6px;font-size:14px;color:#cbbd9f}
+  #sheet .stats b{display:block;font-weight:normal;color:#ffd890;font-size:16px;letter-spacing:2px}
+  #sheet h3{font-weight:normal;font-size:12px;letter-spacing:.2em;color:#ff9c7d;margin:16px 0 6px}
+  #sheet ul{margin:0;padding-left:18px;font-size:15px;line-height:1.55;color:#efe3ca}
+  #sheet .cols{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+  #sheet .close{position:absolute;right:16px;top:12px;cursor:pointer;color:#b5a88e;font-size:14px}
+  #sheet .nav{margin-top:16px;font-size:14px;color:#b5a88e}#sheet .nav a{cursor:pointer;color:#e8c98a;margin-right:14px}
+  #sheet .slot{display:flex;gap:12px;align-items:center;border:1px solid rgba(242,231,208,.25);padding:7px 10px;margin:6px 0;cursor:pointer;background:rgba(255,255,255,.02)}
+  #sheet .slot:hover{border-color:#ffd27a;background:rgba(255,210,120,.06)}
+  #sheet .slot img,#sheet .pk img{width:32px;height:32px;image-rendering:pixelated;flex:none}
+  #sheet .slot b{display:block;font-weight:normal;color:#ffd890;font-size:15px}
+  #sheet .slot span{font-size:13px;color:#cbbd9f;font-style:italic}
+  #sheet .slot.empty{opacity:.55;font-style:italic;font-size:14px;color:#b5a88e}
+  #sheet .pick{border:1px solid #ffd27a;background:#0e0c14;padding:8px 10px;margin:4px 0 8px}
+  #sheet .pick a{display:flex;gap:10px;align-items:center;cursor:pointer;padding:4px 2px;font-size:14px;color:#efe3ca}
+  #sheet .pick a:hover{color:#ffd27a}
+  #sheet .pk{display:inline-flex;gap:8px;align-items:center;margin:4px 16px 4px 0;font-size:14px;color:#efe3ca}
+  #sheet .learned li{color:#bfe0ff}
+  #sheet .note{font-size:13px;color:#8f8474;font-style:italic}
+  #sheet .loy{color:#e0806a;letter-spacing:3px;font-size:16px}
+</style></head><body>
+<div id="stage">
+  <canvas id="c" width="427" height="240"></canvas>
+  <div id="topshade"></div>
+  <div id="fade"></div>
+  <div id="top" class="hud"><div id="res"></div><div id="goal"></div></div>
+  <div id="party" class="hud"></div>
+  <svg id="map" width="320" height="104"></svg>
+  <div id="toast" class="hud"></div>
+  <div id="story" class="hud"></div>
+  <div id="tip" class="hud"></div>
+  <div id="strike"></div>
+  <div id="panel" class="hud"></div>
+  <div id="snd" class="hud">♪ sound on · M to mute · hold Space to see the whole scene</div>
+  <div id="sheet" class="hud"></div>
+</div>
+<script src="layers.js?v=1795479240"></script>
+<script src="audio.js?v=1795479240"></script>
+<script src="icons.js?v=1795479240"></script>
+<script type="module" src="fxbridge.js?v=1795479240"></script>
+<script>
+/* =================================================================== engine */
+const A=window.Audio2;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');ctx.imageSmoothingEnabled=false;
+const IMG={};for(const k in LAYERS){const seen={};IMG[k]=LAYERS[k].map(l=>{const i=new Image();i.src=l.src;const n=seen[l.name]=(seen[l.name]||0)+1;return {...l,id:n>1?l.name+'#'+n:l.name,img:i}})}
+const Z=1.04,CW=427,CH=240,SY=60;   // canvas size; the painted scene starts 60px down, under added sky
+const MEMBERS=['m_banner','m_cleric','m_captain','m_tracker'];
+let O={};
+const st=id=>O[id]||(O[id]={dx:0,dy:0,a:1,sc:1,lit:0,walk:0,lean:0});
+const box=n=>(IMG[G.scene]||[]).find(l=>l.name===n);
+const all=n=>(IMG[G.scene]||[]).filter(l=>l.name===n);
+window.SPEED=1;const sleep=ms=>new Promise(r=>setTimeout(r,ms/SPEED));
+const ease=t=>-(Math.cos(Math.PI*t)-1)/2;
+const TW=[];
+function tw(id,to,ms=600,e=ease){const s=st(id),from={};for(const k in to)from[k]=s[k];return new Promise(res=>TW.push({s,from,to,t0:performance.now(),ms:ms/SPEED,e,res}))}
+const twAll=(n,to,ms,stagger=0)=>Promise.all(all(n).map((l,i)=>sleep(i*stagger).then(()=>tw(l.id,to,ms))));
+const FX=[];
+function ring(x,y,col,ms=1400,R=140){FX.push({k:'ring',x,y,col,t0:performance.now(),ms,R})}
+function flash(ms=220,col='255,240,220'){FX.push({k:'flash',col,t0:performance.now(),ms})}
+let shakeUntil=0,shakeAmp=0;function shake(ms=400,a=2){shakeUntil=performance.now()+ms;shakeAmp=a}
+const P=[];function spark(x,y,n,col,spd=1,up=0,g=.02){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,v=(Math.random()*.8+.2)*spd;P.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-up,l:1,col,g})}}
+const SNOW=[],RAIN=[];
+const feet=m=>{const b=box(m),s=st(m);return [b.x+b.w/2+s.dx,b.y+b.h+s.dy]};
+const head=m=>{const b=box(m),s=st(m);return [b.x+6+s.dx,b.y+12+s.dy]};
+function lantern(){const b=box('m_cleric'),s=st('m_cleric');return [b.x+b.w-8+s.dx,b.y+11+s.dy]}
+const here=m=>G.party[m]!=='gone'&&!!box(m);
+const hov=n=>Array.isArray(G.hover)?G.hover.includes(n):G.hover===n;
+const fading=id=>st(id).a>0.01&&st(id).a<1;
+
+function visible(l){
+  const n=l.name;
+  if(n==='vignette')return false;
+  if(n==='walls'||n==='tower')return !!G.built[n];
+  if(['thieves','fire','refugees'].includes(n))return !G.endFX&&(G.trouble===n||fading(l.id)||(n==='refugees'&&G.refugeesIn&&!G.built.walls));  // once walls stand, the family lives inside them
+  if(/^r\d$/.test(n))return !G.flags.ridersGone||fading(l.id);
+  if(G.scene==='shrine'&&(n==='light'||n==='candles'))return !G.flags.shrineDark||fading(l.id);
+  if(MEMBERS.includes(n))return G.party[n]!=='gone'||fading(l.id);
+  return true;
+}
+let lastStep=0;
+function draw(t){
+  const L=IMG[G.scene];if(!L)return;
+  for(let i=TW.length-1;i>=0;i--){const w=TW[i];const p=Math.min(1,(t-w.t0)/w.ms),k=w.e(p);for(const key in w.to)w.s[key]=w.from[key]+(w.to[key]-w.from[key])*k;if(p>=1){TW.splice(i,1);w.res()}}
+  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,CW,CH);
+  let sx=0,sy=0;if(t<shakeUntil){sx=(Math.random()-.5)*shakeAmp*2;sy=(Math.random()-.5)*shakeAmp*2}
+  ctx.setTransform(Z,0,0,Z,-CW/2*(Z-1)+sx,-CH/2*(Z-1)+sy+SY*Z);
+  skyAbove(L,t);
+  const sway=Math.sin(t*.00016)*3,bob=Math.sin(t*.00035);
+  const pulse=.5+.5*Math.sin(t*.006);
+  const DEP={sky:0,stars:.05,disc:.1,clouds:.25,ridge:.45,dest_north:.45,dest_east:.45,bank:1.3,frame_trees:1.6};
+  let walking=false,firstRidge=true;
+  for(const l of L){
+    if(l.name==='ridge'&&firstRidge){firstRidge=false;if(G.endFX)endDraw(t,'behind')}
+    if(!visible(l))continue;
+    const s=st(l.id);if(s.a<=0)continue;
+    const d=DEP[l.name]??(l.name.startsWith('m_')?1.4:.85);
+    let x=l.x+sway*d+s.dx,y=l.y+bob*d*.5+s.dy,a=s.a;
+    if(l.name==='clouds')x+=Math.sin(t*.00007)*10;
+    if(l.name==='stars'||l.name==='fireflies')a*=.6+.4*Math.sin(t*.003+l.x);
+    if(l.name==='light'||l.name==='rays')a*=.8+.2*Math.sin(t*.002);
+    if(['candles','camp','glow'].includes(l.name))a*=.82+.18*Math.sin(t*.013)*Math.sin(t*.007+l.x);
+    if(l.name==='fire'){a*=.75+.25*Math.random();if(Math.random()<.5)spark(l.x+10+Math.random()*14,l.y+12,1,'255,170,70',.3,.5,-.005)}
+    if(l.name==='fog')x+=Math.sin(t*.00012+l.y)*8;
+    if(l.name==='thieves')x+=Math.round(Math.sin(t*.0011)*1.5);
+    if(l.name==='person'&&G.scene==='pilgrims')x+=((t*.0012)%40)-20;
+    if(s.walk){y-=Math.round(Math.max(0,Math.sin(t*.012+l.x))*1.4);walking=true}
+    ctx.globalAlpha=Math.max(0,Math.min(1,a));
+    let dx_=Math.round(x),dy_=Math.round(y),dw=l.w,dh=l.h;
+    if(s.sc!==1){dw=Math.max(1,Math.round(l.w*s.sc));dh=Math.max(1,Math.round(l.h*s.sc));dx_=Math.round(x+(l.w-dw)/2);dy_=Math.round(y+l.h-dh)}
+    const lean=s.lean+(G.hurt[l.name]?.12:0);
+    const rv=G.reveal[l.name];
+    if(rv&&t-rv<1600){const p=(t-rv)/1600,hh=Math.max(1,Math.ceil(l.h*ease(p)));ctx.drawImage(l.img,0,l.h-hh,l.w,hh,dx_,dy_+l.h-hh,l.w,hh);
+      if(Math.random()<.7)spark(l.x+Math.random()*l.w,l.y+l.h-hh,1,'210,200,180',.4,.4);}
+    else if(lean){ctx.save();ctx.translate(dx_+dw/2,dy_+dh);ctx.rotate(lean);ctx.drawImage(l.img,-dw/2,-dh,dw,dh);ctx.restore()}
+    else ctx.drawImage(l.img,dx_,dy_,dw,dh);
+    const lit=s.lit+(hov(l.name)?.45*pulse:0)+(G.hot===l.name?.4*pulse:0);
+    if(lit>0){ctx.globalCompositeOperation='lighter';ctx.globalAlpha=Math.min(1,lit)*a;ctx.drawImage(l.img,dx_,dy_,dw,dh);ctx.globalCompositeOperation='source-over'}
+    ctx.globalAlpha=1;
+    if(l.name==='bank')embers();
+  }
+  if(walking&&t-lastStep>260){lastStep=t;A.sfx('step')}
+  if(FIREFLIES[G.scene]&&!G.endFX)fireflies(t);
+  if(G.search)searchDraw(t);
+  if(window.PFX&&PFX.ready){const off=PFX.render(SPEED);if(off){ctx.save();ctx.setTransform(Z,0,0,Z,-CW/2*(Z-1),-CH/2*(Z-1));ctx.drawImage(off,0,0);ctx.restore()}}
+  if(G.endFX)endDraw(t,'front');
+  const v=L.find(l=>l.name==='vignette');if(v)ctx.drawImage(v.img,v.x,v.y);
+  for(const p of P){p.x+=p.vx;p.y+=p.vy;p.vy+=p.g;p.l-=.012;ctx.fillStyle=`rgba(${p.col},${Math.max(0,p.l)})`;ctx.fillRect(Math.round(p.x),Math.round(p.y),1,1)}
+  for(let i=P.length-1;i>=0;i--)if(P[i].l<=0)P.splice(i,1);
+  if(G.raining){if(RAIN.length<200)RAIN.push({x:Math.random()*460,y:-70});ctx.strokeStyle='rgba(170,190,220,.55)';ctx.beginPath();for(const r of RAIN){r.y+=4;r.x-=1;if(r.y>185){r.y=-70;r.x=Math.random()*460}ctx.moveTo(r.x,r.y);ctx.lineTo(r.x-1,r.y+4)}ctx.stroke()}
+  else RAIN.length=0;
+  if(G.day>=G.maxDay-1||G.over){if(SNOW.length<(G.over?280:50))SNOW.push({x:Math.random()*450-10,y:-64,v:.15+Math.random()*.3,ph:Math.random()*6});
+    ctx.fillStyle='rgba(240,240,255,.85)';for(const f of SNOW){f.y+=f.v;f.x+=Math.sin(t*.001+f.ph)*.15;if(f.y>182){f.y=-64;f.x=Math.random()*450-10}ctx.fillRect(Math.round(f.x),Math.round(f.y),1,1)}}
+  ctx.setTransform(1,0,0,1,0,SY);
+  for(let i=FX.length-1;i>=0;i--){const f=FX[i],p=(t-f.t0)/f.ms;if(p>=1){FX.splice(i,1);continue}
+    if(f.k==='flash'){ctx.fillStyle=`rgba(${f.col},${(1-p)*.8})`;ctx.fillRect(0,-SY,CW,CH)}
+    if(f.k==='ring'){const r=ease(p)*f.R;ctx.strokeStyle=`rgba(${f.col},${(1-p)})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x,f.y,r,0,7);ctx.stroke();
+      ctx.lineWidth=1;ctx.strokeStyle=`rgba(${f.col},${(1-p)*.4})`;ctx.beginPath();ctx.arc(f.x,f.y,r*.8,0,7);ctx.stroke()}}
+  if(G.dim){ctx.fillStyle=`rgba(5,4,12,${G.dim})`;ctx.fillRect(0,-SY,CW,CH)}
+}
+const SKYSTARS=Array.from({length:70},()=>({x:Math.random()*CW,y:-SY+Math.random()*SY,b:Math.random()}));
+function skyAbove(L,t){
+  const sky=L.find(l=>l.name==='sky');if(!sky||!sky.img.complete)return;
+  ctx.drawImage(sky.img,0,0,sky.w,1,-12,-SY-12,sky.w+24,SY+13);
+  const g=ctx.createLinearGradient(0,-SY,0,2);g.addColorStop(0,'rgba(4,3,10,.55)');g.addColorStop(1,'rgba(4,3,10,0)');ctx.fillStyle=g;ctx.fillRect(-12,-SY-12,CW+24,SY+14);
+  const night=!['abandoned_wagon','hidden_cache','hidden_pass','intro_age'].includes(G.scene);
+  if(night)for(const s of SKYSTARS){ctx.fillStyle=`rgba(232,230,255,${(.35+.45*s.b)*(.7+.3*Math.sin(t*.003+s.x))})`;ctx.fillRect(Math.round(s.x),Math.round(s.y),1,1)}
+}
+function embers(){if(!here('m_cleric'))return;const [x,y]=lantern();if(Math.random()<.25)P.push({x:x+Math.random()*2,y,vx:(Math.random()-.5)*.12,vy:-.25-Math.random()*.25,l:1,col:'255,200,110',g:0})}
+function loop(t){draw(t);requestAnimationFrame(loop)}
+
+/* ---- pixelfx: effects tied to what happens, and small lives in every scene ---- */
+const dust=(x,y,n=10)=>spark(x,y-2,n,'150,138,120',.55,.25,.015);
+const motes=(x,y,col='255,224,150',n=14)=>{for(let i=0;i<n;i++)P.push({x:x+(Math.random()-.5)*8,y:y+(Math.random()-.5)*4,vx:(Math.random()-.5)*.12,vy:-.18-Math.random()*.35,l:1,col,g:0})};
+const sinkMotes=(x,y)=>{for(let i=0;i<8;i++)P.push({x:x+(Math.random()-.5)*8,y,vx:(Math.random()-.5)*.1,vy:.12+Math.random()*.15,l:1,col:'150,150,170',g:0})};
+const fx=(name,x,y,o)=>window.PFX&&PFX.ready?PFX.play(name,x,y,o):null;
+const fxOn=(m,name,o)=>{if(!here(m))return;const [x,y]=feet(m);fx(name,x,y,o)};
+const fxHead=(m,name,o)=>{if(!here(m))return;const [x,y]=head(m);fx(name,x,y-4,o)};
+const FIREFLIES={crossroads:1,ravenwick:1,pilgrims:1,friendly_hamlet:1,fen_lights:1,stillwater:1,shrine:1};
+const FF=Array.from({length:16},()=>({x:Math.random()*320,y:110+Math.random()*55,ph:Math.random()*6.3,sp:.4+Math.random()*.6}));
+function fireflies(t){for(const f of FF){const x=f.x+Math.sin(t*.0004*f.sp+f.ph)*14,y=f.y+Math.sin(t*.0007*f.sp+f.ph*2)*6,a=.35+.65*Math.max(0,Math.sin(t*.002*f.sp+f.ph));
+  ctx.fillStyle=`rgba(210,240,120,${a*.25})`;ctx.fillRect(Math.round(x)-1,Math.round(y)-1,3,3);ctx.fillStyle=`rgba(236,255,170,${a})`;ctx.fillRect(Math.round(x),Math.round(y),1,1)}}
+function ambientFx(){}
+addEventListener('pfx-ready',()=>ambientFx());
+const _sfx=A.sfx;A.sfx=n=>{_sfx(n);try{SFX_FX[n]&&SFX_FX[n]()}catch(e){}};
+const atGo=()=>G.lastGo||[160,160];
+const SFX_FX={
+  prayer:()=>{fxOn('m_cleric','holy/blessing',{life:2.4})},
+  clash:()=>{const r=box('r1');const [x,y]=r&&!G.flags.ridersGone?[r.x+10,r.y+r.h]:atGo();fx('impacts/crit-hit',x,y);fx('impacts/hit-spark',x,y-6)},
+  stone:()=>{const [x,y]=atGo();dust(x,y,12)},
+  rumble:()=>{for(let k=0;k<6;k++)dust(110+k*20,160,14)},
+  gallop:()=>{for(const r of ['r0','r1','r2','r3']){const b=box(r);if(b)dust(b.x+8+st(r).dx,b.y+b.h+st(r).dy,6)}},
+  whoosh:()=>{const [x,y]=atGo();dust(x,y,10)},
+  coin:()=>{if(here('m_banner')){const [x,y]=head('m_banner');motes(x,y-4,'255,214,110',12)}},
+  gain:()=>{if(here('m_banner')){const [x,y]=head('m_banner');motes(x,y-4,'240,230,200',10)}},
+  rain:()=>fx('weather/rain',160,170,{life:4.5}),
+  hurt:()=>{},
+};
+
+/* ---- clicking things in the picture ---- */
+const toScene=e=>{const r=cv.getBoundingClientRect();const x=(e.clientX-r.left)/r.width*CW,y=(e.clientY-r.top)/r.height*CH;return [(x+CW/2*(Z-1))/Z,(y+CH/2*(Z-1))/Z-SY]};
+function HOT(){if(G.busy||G.sub||G.msg)return [];const h=[];
+  if(G.scene==='ravenwick'&&G.trouble)h.push({layer:G.trouble,go:()=>{A.sfx('click');G.sub=G.trouble;render()}});
+  for(const m of MEMBERS)if(here(m))h.push({layer:m,go:()=>openSheet(m)});return h}
+function hitAt(e){const [x,y]=toScene(e);for(const h of HOT()){const b=box(h.layer);if(b&&x>=b.x+st(b.id).dx-3&&x<=b.x+b.w+st(b.id).dx+3&&y>=b.y+st(b.id).dy-3&&y<=b.y+b.h+st(b.id).dy+3)return h}return null}
+cv.onmousemove=e=>{const h=hitAt(e);if(h&&G.hot!==h.layer)A.sfx('hover');G.hot=h?h.layer:null;cv.classList.toggle('hot',!!h)};
+cv.onclick=e=>{if(G.search||G.striking)return;const h=hitAt(e);if(h)h.go()};
+
+
+/* =================================================================== the moment: a timing strike */
+// A marker sweeps a bar; strike inside the gold. The character's stat sets how wide the gold is.
+function strike(m,stat,label){
+  if(window.BOT)return Promise.resolve('good');
+  const v=CO[m].stats[stat]||2,el=document.getElementById('strike');
+  const zw=10+v*6,zc=30+Math.random()*40;
+  el.innerHTML=`<div class="lbl">${label} <span style="color:#cbbd9f">· ${stat} ${'■'.repeat(v)}</span></div><div class="bar"><div class="zone" style="left:${zc-zw/2}%;width:${zw}%"></div><div class="mk"></div></div><div class="res"></div><div class="hint">click, or press Space, when the marker is in the gold</div>`;
+  el.style.display='block';const mk=el.querySelector('.mk'),res=el.querySelector('.res');
+  const t0=performance.now(),per=900/Math.max(.5,SPEED);let done=false;A.sfx('page');
+  return new Promise(resolve=>{
+    function frame(){if(done)return;const ph=((performance.now()-t0)/per)%2,pos=(ph<1?ph:2-ph)*100;mk.style.left=pos+'%';mk.dataset.pos=pos;requestAnimationFrame(frame)}
+    frame();
+    G.striking=()=>{if(done)return;done=true;G.striking=null;const pos=+mk.dataset.pos,d=Math.abs(pos-zc);
+      const q=d<zw*.18?'great':d<zw/2?'good':'miss';
+      res.textContent={great:'Perfect!',good:'Good.',miss:'Missed…'}[q];res.style.color={great:'#fff0a0',good:'#ffd27a',miss:'#ff8a70'}[q];
+      _sfx(q==='miss'?'loss':q==='great'?'ward':'click');if(q==='great')fxOn(m,'holy/sunburst',{life:1.2});
+      setTimeout(()=>{el.style.display='none';resolve(q)},650)};
+    el.onclick=()=>G.striking&&G.striking();
+  });
+}
+cv.addEventListener('mousedown',()=>{if(G.striking)G.striking()});
+
+/* =================================================================== search by lantern-light */
+// The scene goes dark; the cursor is a lantern. Glints show only inside its light. A few picks.
+const SEARCHABLE={hidden_cache:1,abandoned_wagon:1,fen_lights:1,drowned_chapel:1,hidden_pass:1,ferry:1};
+function searchOption(){
+  if(!SEARCHABLE[G.scene]||G.searched===G.scene+G.day)return [];
+  const picks=3+(has('m_tracker')?2:0);
+  return [{t:'Search by lantern-light',s:`${picks} picks${has('m_tracker')?' (Ness adds 2)':''} · free · find what others missed`,go:()=>runSearch(picks)}];
+}
+const FENS={ferry:1,fen_lights:1,drowned_chapel:1,stillwater:1};
+function roadOptions(){
+  const o=[];
+  if(FENS[G.scene]&&knows('fishing')&&G.fished!==G.scene+G.day)o.push({t:'Fish the black water',who:'m_tracker',s:'Fen fishing · +3 Bread · free',go:()=>beat(async()=>{G.fished=G.scene+G.day;
+    await goTo('m_tracker',150,150,.9,1200);await sleep(900);spark(150,146,14,'200,215,235',.6,.5);_sfx('gain');gain({Bread:3});await back('m_tracker');G.msg={kind:'FISHING',body:'Eels, two pike and something nobody will name. +3 Bread.',stay:true,barks:[]}})});
+  const wounded=MEMBERS.filter(m=>G.hurt[m]&&G.party[m]==='ok'),med=actorFor('mend');
+  if(wounded.length&&med&&has(med)&&(knows('herbs')&&med==='m_cleric'||carries(med,'mend'))){const free=knows('herbs')&&med==='m_cleric';
+    o.push({t:'Tend the wounded',who:med,s:`${free?'Herb lore · free':'Healer\'s satchel · 1 Bread'} · heals ${wounded.map(nm).join(', ')}`,c:free?null:{Bread:1},go:()=>beat(async()=>{if(!free)pay({Bread:1});
+      for(const m of wounded){const [x,y]=head(m);_sfx('prayer');spark(x,y,16,'200,255,200',.5,.5);delete G.hurt[m]}await sleep(1000);G.msg={kind:'MENDED',body:'Bandages by the roadside, and a bitter tea.',stay:true,barks:[]}})});}
+  return o;
+}
+function runSearch(picks){
+  G.searched=G.scene+G.day;busy(true);A.sfx('click');
+  const spots=[];const n=rnd(3,5);
+  for(let i=0;i<n;i++){const r=Math.random();
+    spots.push({x:20+Math.random()*270,y:122+Math.random()*44,found:false,
+      r:r<.35?{Coin:1}:r<.62?{Bread:2}:r<.85?{Stone:1}:{Ward:1}})}
+  G.search={spots,picks,haul:{},lamp:[160,140]};
+  const el=document.getElementById('strike');
+  const hint=()=>{el.innerHTML=`<div class="lbl">Searching by lantern-light · ${G.search.picks} pick${G.search.picks===1?'':'s'} left</div><div class="hint">move the lantern, click where something glints</div><button id="stopsearch">Stop searching</button>`;
+    el.style.display='block';document.getElementById('stopsearch').onclick=e=>{e.stopPropagation();endSearch()}};
+  hint();A.ambience([...(SCENE_SOUND[G.scene]||[0,[]])[1]]);
+  G.searchClick=(x,y)=>{const S=G.search;if(!S||S.picks<=0)return;S.picks--;
+    const hit=S.spots.find(p=>!p.found&&Math.hypot(p.x-x,p.y-y)<7);
+    if(hit){hit.found=true;for(const k in hit.r)S.haul[k]=(S.haul[k]||0)+hit.r[k];gain(hit.r);motes(hit.x,hit.y,'255,230,160',16);}
+    else{_sfx('step');dust(x,y+3,8)}
+    if(S.picks<=0)setTimeout(endSearch,700);else hint()};
+}
+function endSearch(){
+  const S=G.search;if(!S)return;G.search=null;G.searchClick=null;document.getElementById('strike').style.display='none';
+  const got=Object.entries(S.haul).map(([k,v])=>`+${v} ${k}`).join(', ');
+  busy(false);G.msg={kind:'SEARCHED',body:got?`Under the lantern you turn up ${got}.`:'You find nothing but mud and old bones.',stay:true,title:(document.querySelector('#panel h1')||{}).textContent||'',barks:[]};render();
+}
+function searchDraw(t){
+  const S=G.search,[lx,ly]=S.lamp;
+  const g=ctx.createRadialGradient(lx,ly,6,lx,ly,34);g.addColorStop(0,'rgba(255,220,150,0)');g.addColorStop(.6,'rgba(4,3,10,.55)');g.addColorStop(1,'rgba(4,3,10,.9)');
+  ctx.fillStyle=g;ctx.fillRect(-40,-SY-40,CW+80,CH+80);
+  for(const p of S.spots){if(p.found)continue;const d=Math.hypot(p.x-lx,p.y-ly);if(d>30)continue;
+    const a=(1-d/30)*(.6+.4*Math.sin(t*.01+p.x));ctx.fillStyle=`rgba(255,240,180,${a})`;
+    ctx.fillRect(Math.round(p.x),Math.round(p.y)-1,1,3);ctx.fillRect(Math.round(p.x)-1,Math.round(p.y),3,1)}
+}
+cv.addEventListener('mousemove',e=>{if(G.search)G.search.lamp=toScene(e)});
+cv.addEventListener('click',e=>{if(G.searchClick){const [x,y]=toScene(e);G.searchClick(x,y)}});
+
+/* =================================================================== the Company */
+const CO={
+  m_banner:{name:'Wren',short:'Wren',title:'WARDEN OF RAVENWICK · YOU',bio:'You raised the banner over Ravenwick when nobody else would. The others follow you, for now.',
+    stats:{Might:2,Wits:3,Faith:2,Stealth:1},skills:['Parley: talk or pay your way past trouble','Command: build and set the work at home'],gear:['Banner of Ravenwick','Warden\'s seal'],likes:'—',dislikes:'—',loyal:null},
+  m_cleric:{name:'Brother Aldous',short:'Aldous',title:'CLERIC OF THE OLD LIGHT',bio:'Forty years tending shrines nobody visits. Walks slowly, never stops, and believes the old gods are only sleeping.',
+    stats:{Might:1,Wits:3,Faith:5,Stealth:1},skills:['Ward: spend a Ward to turn back men and beasts','Pray: draw Wards from holy places','Mend: tend the wounded at home (1 Bread)','Call rain: a Ward can put out a fire'],gear:['Lantern-staff','Book of hours'],
+    likes:'prayer, mercy, sharing bread',dislikes:'desecration, robbing the poor',loyal:3},
+  m_captain:{name:'Captain Brannoc',short:'Brannoc',title:'SWORD OF RAVENWICK',bio:'Fought for three lords and buried two. Does not pay tolls, does not run, and does not like to talk about either.',
+    stats:{Might:5,Wits:2,Faith:1,Stealth:1},skills:['Draw steel: fight, win, maybe bleed','Haul: carry stone others can\'t','Run down: chase off thieves'],gear:['Ash spear','Round shield','Old helm'],
+    likes:'a fair fight, hard work',dislikes:'paying tolls, running away',loyal:3,devoted:'Devoted: never wounded when he draws steel'},
+  m_tracker:{name:'Ness',short:'Ness',title:'TRACKER OF THE GREYSPIRES',bio:'Grew up in these mountains. Says little, misses nothing, and expects to be paid.',
+    stats:{Might:2,Wits:4,Faith:1,Stealth:5},skills:['Pathfind: lead the Company through mist','Follow: track anyone home','Climb: reach the stone no one else can'],gear:['Yew bow','Quiver of twelve'],
+    likes:'coin, open country',dislikes:'hunger, wasting daylight',loyal:2,devoted:'Devoted: never falls when climbing'},
+};
+const nm=m=>CO[m].short;
+function loyal(m,d,line){
+  if(!CO[m])return;
+  if(G.party[m]!=='gone'){G.pulse[m]=performance.now();if(!G.tips.loyal&&!G.want.loyal)G.want.loyal=[m,d]}
+  if(!CO[m].loyal&&CO[m].loyal!==0||G.party[m]==='gone')return;
+  const v=Math.max(0,Math.min(5,G.loyal[m]+d));if(v===G.loyal[m])return;G.loyal[m]=v;
+  A.sfx(d>0?'loyalUp':'loyalDown');if(here(m)){const [hx,hy]=head(m);d>0?motes(hx,hy-6,'255,200,140',10):sinkMotes(hx,hy-8)}
+  toast(`${CO[m].name} ${d>0?'approves':'disapproves'} ${d>0?'♥'.repeat(d):'♡'.repeat(-d)}`);
+  if(line)G.barks.push([m,line]);
+  if(v===0)G.leaving.push(m);
+}
+let toastT;function toast(s){const el=document.getElementById('toast');el.textContent=s;el.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>el.style.opacity=0,2600)}
+function openSheet(m,picking=-1){
+  if(picking<0)A.sfx('page');const c=CO[m],el=document.getElementById('sheet'),gone=G.party[m]==='gone';
+  const pips=c.loyal===null?'':`<div class="loy">${'♥'.repeat(G.loyal[m])}${'♡'.repeat(5-G.loyal[m])}</div>`;
+  const cond=gone?'Gone':G.hurt[m]?`Wounded · ${G.hurt[m]} more day${G.hurt[m]>1?'s':''}`:'Well';
+  const icon=k=>`<img src="${ICONS[k]}">`;
+  const fromGear=G.eq[m].filter(k=>ITEMS[k].grants).map(k=>`<li>${{steel:'Draw steel',climb:'Climb for stone',signet:'Show the signet',light:'Lead through the mist',mend:'Tend the wounded on the road'}[ITEMS[k].grants]} <span class="note">· from the ${ITEMS[k].name}</span></li>`);
+  const slots=[0,1].map(i=>{const k=G.eq[m][i];
+    const slot=k?`<div class="slot" onclick="openSheet('${m}',${i})">${icon(k)}<div><b>${ITEMS[k].name}</b><span>${ITEMS[k].desc}</span></div></div>`
+      :`<div class="slot empty" onclick="openSheet('${m}',${i})">Empty slot${G.pack.length?' · click to equip from the pack':''}</div>`;
+    const pick=picking===i&&!gone?`<div class="pick">${G.pack.map(p=>`<a onclick="equip('${m}',${i},'${p}')">${icon(p)}<span><b style="font-weight:normal;color:#ffd890">${ITEMS[p].name}</b> · ${ITEMS[p].desc}</span></a>`).join('')||'<span class="note">The pack is empty. Gear is found or bought on the road.</span>'}
+      ${k?`<a onclick="equip('${m}',${i},null)">↩ Put the ${ITEMS[k].name} in the pack</a>`:''}</div>`:'';
+    return slot+pick}).join('');
+  const learned=G.learned[m].map(k=>`<li><b style="font-weight:normal">${LEARN[k].name}</b>: ${LEARN[k].desc}</li>`).join('');
+  el.innerHTML=`<span class="close" onclick="closeSheet()">close ✕</span><div class="row"><canvas class="pt" width="64" height="64"></canvas><div>
+    <h2>${c.name}</h2><div class="title">${c.title}</div>${pips}<div class="bio">${c.bio}</div>
+    <div class="stats">${Object.entries(c.stats).map(([k,v])=>`<div>${k}<b>${'■'.repeat(v)}${'□'.repeat(5-v)}</b></div>`).join('')}</div></div></div>
+    <div class="cols"><div><h3>SKILLS</h3><ul>${c.skills.map(x=>`<li>${x}</li>`).join('')}${fromGear.join('')}</ul>
+      <h3>LEARNED</h3>${learned?`<ul class="learned">${learned}</ul>`:'<div class="note">Nothing yet. Some places and people on the road can teach new skills.</div>'}
+      <h3>CONDITION</h3><ul><li>${cond}</li>${c.devoted?`<li style="color:${G.loyal[m]>=5?'#a6e0a0':'#8f8474'}">${c.devoted}</li>`:''}</ul>
+      ${c.loyal===null?'':`<h3>LIKES · DISLIKES</h3><ul><li>Likes ${c.likes}</li><li>Dislikes ${c.dislikes}</li></ul>`}</div>
+    <div><h3>EQUIPPED · 2 SLOTS</h3>${slots}<div class="note">Carries: ${c.gear.join(', ')}</div>
+      <h3>THE PACK · SHARED</h3>${G.pack.length?G.pack.map(k=>`<span class="pk">${icon(k)}${ITEMS[k].name}</span>`).join(''):'<div class="note">Empty. Click a slot to move gear between people.</div>'}
+      <h3>STORES · EVERYONE</h3>${G.items.length?G.items.map(k=>`<span class="pk" title="${ITEMS[k].desc}">${icon(k)}${ITEMS[k].name}</span>`).join(''):'<div class="note">None yet.</div>'}</div></div>
+    <div class="nav">${MEMBERS.map(x=>`<a onclick="openSheet('${x}')">${CO[x].short}</a>`).join('')}</div>`;
+  const pc=el.querySelector('canvas').getContext('2d');const im=new Image();im.onload=()=>pc.drawImage(im,0,0);im.src=PORTRAITS[m];
+  if(gone)el.querySelector('canvas').style.filter='grayscale(1) brightness(.5)';
+  el.style.display='block';G.sheet=m;
+}
+function equip(m,i,k){
+  const cur=G.eq[m][i];if(cur){G.eq[m].splice(i,1);G.pack.push(cur)}
+  if(k){G.pack.splice(G.pack.indexOf(k),1);G.eq[m].splice(Math.min(i,G.eq[m].length),0,k);_sfx('click');toast(`${CO[m].short} now carries the ${ITEMS[k].name}`)}
+  openSheet(m);render();
+}
+function closeSheet(){document.getElementById('sheet').style.display='none';G.sheet=null}
+addEventListener('keydown',e=>{if(e.code==='Space'&&G.striking){e.preventDefault();G.striking();return}if(e.code==='Space'){e.preventDefault();document.getElementById('stage').classList.add('peek');return}if(e.key==='Escape')closeSheet();if(e.key==='m'||e.key==='M')toggleSnd();
+  if(e.key==='c'||e.key==='C'){if(G.sheet){const i=MEMBERS.indexOf(G.sheet);openSheet(MEMBERS[(i+1)%4])}else openSheet('m_banner')}});
+addEventListener('keyup',e=>{if(e.code==='Space')document.getElementById('stage').classList.remove('peek')});
+function toggleSnd(){const m=A.toggle();document.getElementById('snd').textContent=(m?'♪ sound off · M to unmute':'♪ sound on · M to mute')+' · hold Space to see the whole scene'}
+document.getElementById('snd').onclick=toggleSnd;
+
+/* =================================================================== state */
+const G={pulse:{},day:1,maxDay:14,items:[],pack:[],eq:{m_banner:[],m_cleric:[],m_captain:[],m_tracker:[]},learned:{m_banner:[],m_cleric:[],m_captain:[],m_tracker:[]},res:{Stone:1,Coin:1,Bread:5,Ward:1},built:{walls:0,tower:0},
+  party:{m_banner:'ok',m_cleric:'ok',m_captain:'ok',m_tracker:'ok'},hurt:{},loyal:{m_cleric:3,m_captain:3,m_tracker:2},gear:{},
+  trouble:null,troubleSeen:{},troublesDone:{},refugeesIn:false,flags:{},
+  done:{},visited:{ravenwick:1},
+  scene:'intro_broken',sub:null,mode:'splash',tutorial:true,tips:{},want:{},msg:null,reveal:{},busy:false,dim:0,over:false,log:[],barks:[],leaving:[]};
+const has=m=>G.party[m]==='ok'&&!G.hurt[m];
+const can=c=>!c||Object.entries(c).every(([k,v])=>G.res[k]>=v);
+const pay=c=>{if(!c)return;Object.entries(c).forEach(([k,v])=>G.res[k]-=v)};
+const gain=c=>{let up=false,down=false;for(const k in c){G.res[k]=Math.max(0,G.res[k]+c[k]);if(c[k]>0)up=true;else down=true}if(up)A.sfx(c.Coin>0?'coin':'gain');else if(down)A.sfx('loss')};
+const cost=c=>Object.entries(c).map(([k,v])=>`${v} ${k}`).join(', ');
+// Every season rolls its own prices and its own luck, so familiar places don't always pay the same.
+const rnd=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const COST={walls:{Stone:rnd(3,5),Coin:rnd(1,2)},tower:{Stone:rnd(5,7),Coin:rnd(3,5)}};
+const Y={shrineHaul:rnd(1,3),mists:rnd(2,4),mistsLuck:.3+Math.random()*.4,hollow:rnd(2,4),quarry:rnd(2,4),climb:rnd(4,6),climbFall:.2+Math.random()*.25,
+  toll:rnd(1,2),market:rnd(1,3),steel:rnd(2,4),alms:rnd(1,3),wagon:rnd(2,4),sell:rnd(1,3),ferry:rnd(1,2),purse:rnd(2,4),chapel:rnd(3,5),wispLuck:.35+Math.random()*.3};
+// Gear is carried: each member has two slots, and whoever carries an item gets what it does.
+// Stores stay at Ravenwick or with the baggage and help everyone.
+const ITEMS={
+  sword:{name:'Fen-iron sword',kind:'gear',to:'m_captain',grants:'steel',desc:'The bearer can Draw steel, and is never wounded doing it.'},
+  irons:{name:'Climbing irons',kind:'gear',to:'m_tracker',grants:'climb',desc:'The bearer can Climb for stone, never falls, and brings back +1 Stone.'},
+  signet:{name:'Signet of a dead lord',kind:'gear',to:'m_banner',grants:'signet',desc:'The bearer can show it: highwaymen stand aside, and Hollin pays +1 Coin.'},
+  jar:{name:'Marsh-light in a jar',kind:'gear',to:'m_cleric',grants:'light',desc:'The bearer can lead anyone safely through the mist.'},
+  satchel:{name:'Healer\'s satchel',kind:'gear',to:'m_cleric',grants:'mend',desc:'The bearer can tend the wounded anywhere on the road, for 1 Bread.'},
+  mule:{name:'Pack mule',kind:'stores',desc:'Every haul of stone brings +1.'},
+  traps:{name:'Eel traps',kind:'stores',desc:'+1 Bread every day.'},
+  bell:{name:'Saint\'s Bell',kind:'stores',desc:'Hung at Ravenwick: +1 Ward every time you rest there.'},
+};
+const LEARN={
+  masonry:{m:'m_captain',name:'Masonry',desc:'Walls and the watchtower each cost 1 less Stone.'},
+  fishing:{m:'m_tracker',name:'Fen fishing',desc:'In the Fens, Ness can fish for +3 Bread once a visit.'},
+  herbs:{m:'m_cleric',name:'Herb lore',desc:'Aldous can tend the wounded anywhere on the road, for free.'},
+  haggle:{m:'m_banner',name:'Haggling',desc:'Markets pay +1 Coin, and sell you +1 Bread.'},
+};
+const INNATE={steel:['m_captain'],climb:['m_tracker'],mend:['m_cleric']};
+const holder=k=>MEMBERS.find(m=>G.party[m]!=='gone'&&G.eq[m].includes(k))||null;
+const owned=k=>G.items.includes(k)||G.pack.includes(k)||!!holder(k);
+const hasItem=k=>ITEMS[k].kind==='stores'?G.items.includes(k):!!holder(k);
+const knows=k=>G.party[LEARN[k].m]!=='gone'&&G.learned[LEARN[k].m].includes(k);
+const carries=(m,sk)=>G.eq[m].some(k=>ITEMS[k].grants===sk);
+const canSkill=(m,sk)=>G.party[m]!=='gone'&&((INNATE[sk]||[]).includes(m)&&(sk!=='mend'||true)||carries(m,sk)||(sk==='mend'&&G.learned[m].includes('herbs')));
+function actorFor(sk){const able=MEMBERS.filter(m=>canSkill(m,sk));return able.find(m=>has(m))||able[0]||null}
+const costOf=b=>({Stone:Math.max(1,COST[b].Stone-(knows('masonry')?1:0)),Coin:COST[b].Coin});
+function getItem(k){
+  if(owned(k))return;const it=ITEMS[k];_sfx('ward');if(here('m_banner'))fxOn('m_banner','holy/blessing',{life:1.8});
+  if(it.kind==='stores'){G.items.push(k);toast(`Found: ${it.name} (stores)`);return}
+  const pref=[it.to,...MEMBERS].find(m=>G.party[m]!=='gone'&&G.eq[m].length<2);
+  if(pref){G.eq[pref].push(k);toast(`Found: ${it.name}. ${CO[pref].short} carries it`)}else{G.pack.push(k);toast(`Found: ${it.name}, into the pack`)}
+  G.want.gear=1;
+}
+function learn(k){const L=LEARN[k],m=L.m;if(G.party[m]==='gone'||G.learned[m].includes(k))return;G.learned[m].push(k);_sfx('prayer');
+  if(here(m)){const [x,y]=head(m);motes(x,y-6,'190,230,255',18)}toast(`${CO[m].short} learned ${L.name}`);G.barks.push([null,`<b>${CO[m].short} learned ${L.name}.</b> ${L.desc}`])}
+function seasonNotes(){const n=[];
+  if(Y.quarry>=4)n.push('the old quarry is said to be rich this year');if(Y.quarry<=2)n.push('the quarry is mostly picked over');
+  if(Y.toll>=2)n.push('the riders on the Oakwell road are greedy this year');if(Y.sell>=3)n.push('grain sells high in Hollin');
+  if(Y.mists>=4)n.push('old cairns have been seen up the high pass');if(Y.chapel>=5)n.push('the drowned chapel has good dressed stone');
+  return n.length?'Word around the fire: '+n.slice(0,2).join('; ')+'.':''}
+const SCENE_SOUND={crossroads:['road',['wind','crickets']],highwaymen:['tension',['wind']],shrine:['eerie',['drips','hum']],ravenwick:['home',['fire','crickets','water']],
+  lost_in_mists:['mist',['wind']],hidden_pass:['peak',['gale','waterfall']],hidden_cache:['day',['birds','wind']],pilgrims:['hymn',['crickets','murmur']],
+  abandoned_wagon:['day',['birds','wind']],friendly_hamlet:['tavern',['crickets','fire','murmur']],
+  ferry:['fen',['water','crickets']],fen_lights:['mist',['water','drips']],drowned_chapel:['hymn',['water','hum']],stillwater:['fen',['water','murmur','crickets']]};
+function sound(){const s=SCENE_SOUND[G.scene];if(!s)return;let mood=s[0];if(G.scene==='ravenwick'&&G.trouble)mood='tension';if(G.over)mood=G.built.tower?'victory':'defeat';A.mood(mood);A.ambience(s[1])}
+
+/* ---- movement ---- */
+async function walkIn(){
+  if(!box('m_banner'))return;const ms=MEMBERS.filter(here);const fromLeft=G.scene!=='crossroads';
+  ms.forEach(m=>Object.assign(st(m),{dx:fromLeft?-140:0,dy:fromLeft?0:60,sc:1,a:1,walk:1}));
+  await Promise.all(ms.map((m,i)=>sleep(i*160).then(()=>tw(m,{dx:0,dy:0},1800)).then(()=>st(m).walk=0)));
+}
+async function walkOut(path){const ms=MEMBERS.filter(here);ms.forEach(m=>st(m).walk=1);
+  await Promise.all(ms.map(async(m,i)=>{await sleep(i*130);for(const [dx,dy,sc,a,t] of path)await tw(m,{dx,dy,sc,a},t)}))}
+async function goTo(m,x,y,sc=1,ms=1100){if(!here(m))return;G.lastGo=[x,y];const b=box(m);st(m).walk=1;await tw(m,{dx:x-(b.x+b.w/2),dy:y-(b.y+b.h),sc},ms);st(m).walk=0}
+async function back(m,ms=1000){if(!here(m))return;st(m).walk=1;await tw(m,{dx:0,dy:0,sc:1},ms);st(m).walk=0}
+async function depart(m){A.sfx('depart');G.pack.push(...G.eq[m]);G.eq[m]=[];st(m).walk=1;await tw(m,{dx:-150,a:0},2600);st(m).walk=0;G.party[m]='gone'}
+
+async function go(scene,{days=1,out=null}={}){
+  busy(true);closeSheet();A.sfx('click');
+  if(out)await walkOut(out);
+  const f=document.getElementById('fade');f.style.opacity=1;await sleep(650);
+  const from=G.scene;
+  for(let i=0;i<days;i++)endOfDay(from,scene);
+  O={};G.scene=scene;G.sub=null;G.msg=null;G.raining=false;G.visited[scene]=1;if(LOC[scene]&&LOC[scene].repeat)G.done[scene]=0;
+  if(scene==='ravenwick')maybeTrouble();
+  if(G.day>G.maxDay&&!G.over){f.style.opacity=0;busy(false);return startEnd(false)}
+  sound();render();ambientFx();A.sfx('page');f.style.opacity=0;await sleep(300);
+  if(!G.over)await walkIn();
+  while(G.leaving.length){const m=G.leaving.shift();if(G.party[m]==='gone')continue;
+    G.msg={kind:'A DEPARTURE',body:leaveLine(m),stay:true};render();await depart(m)}
+  busy(false);render();
+}
+const leaveLine=m=>({m_cleric:'Brother Aldous will not walk with you any more. He takes his lantern and goes back the way you came.',
+  m_captain:'Captain Brannoc spits, shoulders his spear, and goes to find a lord who keeps his word.',
+  m_tracker:'Ness is gone before dawn. No note. Ness never was one for notes.'}[m]);
+function endOfDay(from,dest){
+  G.day++;G.log=[];
+  const rest=from==='ravenwick'&&dest==='ravenwick';
+  G.res.Bread-=1;G.res.Bread+=rest?3:1;G.log.push(rest?'you worked the fields (+3 Bread, −1 eaten)':'the fields gave 1, the Company ate 1');
+  if(rest&&G.refugeesIn){G.res.Stone+=1;G.log.push('the newcomers cut stone (+1)')}
+  if(rest&&hasItem('bell')){G.res.Ward+=1;G.log.push('the Saint\'s Bell gave a Ward')}
+  if(hasItem('traps')){G.res.Bread+=1;G.log.push('the eel traps gave 1')}
+  if(G.trouble==='thieves'){G.res.Bread-=1;G.log.push('thieves took 1 Bread')}
+  if(G.trouble==='fire'){G.res.Bread-=2;G.log.push('the fire spread to the stores (−2 Bread)')}
+  for(const m in G.hurt){if(--G.hurt[m]<=0)delete G.hurt[m]}
+  if(rest&&G.loyal.m_tracker&&G.party.m_tracker==='ok'&&Math.random()<.35)loyal('m_tracker',-1,'Another day sitting by the fire. Ness is restless.');
+  if(G.res.Bread<0){G.res.Bread=0;G.log.push('there was not enough bread');
+    for(const m of ['m_tracker','m_captain','m_cleric'])if(G.party[m]==='ok')loyal(m,m==='m_tracker'?-2:-1)}
+}
+function maybeTrouble(){
+  if(G.trouble)return;
+  const pool=[];
+  if(!G.built.walls&&G.day>=3&&!G.troublesDone.thieves&&!(G.thievesBack>G.day))pool.push('thieves');
+  if(G.day>=4&&!G.troubleSeen.refugees)pool.push('refugees');
+  if(G.day>=6&&!G.troubleSeen.fire)pool.push('fire');
+  if(pool.length&&Math.random()<.75){G.trouble=pool[Math.floor(Math.random()*pool.length)];G.troubleSeen[G.trouble]=1}
+}
+function busy(b){G.busy=b;document.getElementById('panel').classList.toggle('busy',b)}
+async function beat(fn){busy(true);A.sfx('click');await fn();
+  while(G.leaving.length){const m=G.leaving.shift();if(G.party[m]==='gone')continue;await sleep(400);G.barks.push([null,leaveLine(m)]);await depart(m)}
+  busy(false);if(G.day>G.maxDay&&!G.over)return startEnd(false);render();A.sfx('page')}
+const outcome=(kind,body)=>{if(LOC[G.scene]&&G.scene!=='ravenwick'&&G.scene!=='crossroads')G.done[G.scene]=1;G.msg={kind,body,title:(document.querySelector('#panel h1')||{}).textContent||'',barks:G.barks.splice(0)}};
+const ALL4=()=>MEMBERS.filter(here);
+
+/* =================================================================== scenes */
+/* ---- the land: two chains of places, joined at the far end by the high road ---- */
+const LOC={
+  ravenwick:{name:'Ravenwick',x:14,y:50,links:['crossroads']},
+  crossroads:{name:'The Fork',x:56,y:50,links:['ravenwick','shrine','highwaymen','ferry'],home:0},
+  shrine:{name:'The Spire',r:'n',x:100,y:12,links:['crossroads','lost_in_mists'],home:1},
+  lost_in_mists:{name:'The High Pass',r:'n',x:148,y:12,links:['shrine','hidden_cache','pilgrims'],home:1},
+  hidden_cache:{name:'Sunlit Hollow',r:'n',x:196,y:12,links:['lost_in_mists','hidden_pass'],home:2},
+  hidden_pass:{name:'Old Quarry',r:'n',x:244,y:12,links:['hidden_cache','friendly_hamlet'],home:2,repeat:1},
+  highwaymen:{name:'Oakwell Road',r:'e',x:100,y:50,links:['crossroads','pilgrims'],home:1},
+  pilgrims:{name:'The Ridge Road',r:'e',x:148,y:50,links:['highwaymen','abandoned_wagon','lost_in_mists'],home:1},
+  abandoned_wagon:{name:'The Ruts',r:'e',x:196,y:50,links:['pilgrims','friendly_hamlet','drowned_chapel'],home:2},
+  friendly_hamlet:{name:'Hollin',r:'e',x:244,y:50,links:['abandoned_wagon','hidden_pass','stillwater'],home:2,repeat:1},
+  ferry:{name:'The Old Ferry',r:'f',x:100,y:88,links:['crossroads','fen_lights'],home:1},
+  fen_lights:{name:'The Black Water',r:'f',x:148,y:88,links:['ferry','drowned_chapel'],home:1},
+  drowned_chapel:{name:'The Drowned Chapel',r:'f',x:196,y:88,links:['fen_lights','stillwater','abandoned_wagon'],home:2},
+  stillwater:{name:'Stillwater',r:'f',x:244,y:88,links:['drowned_chapel','friendly_hamlet'],home:1,repeat:1,boat:1},
+};
+const REGION={n:'the Greyspires',e:'the lowlands',f:'the Fens'};
+const RUMOUR={shrine:'a broken spire with a green light in it',lost_in_mists:'mist pouring down the high pass',hidden_cache:'a sunlit hollow below the pass, and something glinting',
+  hidden_pass:'old quarry workings under the snowline',highwaymen:'smoke over the hills: someone camped on the road',pilgrims:'lanterns moving slowly along the ridge',
+  abandoned_wagon:'crows circling something on the road',friendly_hamlet:'the hamlet of Hollin and its market',ferry:'a lantern on the river, and a raft on a rope',
+  fen_lights:'pale lights moving over black water',drowned_chapel:'a bell tower standing up out of a lake',stillwater:'huts on stilts, and boats'};
+const known=n=>G.visited[n]||LOC[n].links.some(x=>G.visited[x]);
+const CROSS_HOVER={shrine:['dest_north','road_north'],highwaymen:['dest_east','road_east'],ferry:['dest_fens','road_fens']};
+function travelOptions(from){
+  const L=LOC[from],out=[];
+  for(const n of L.links){
+    if(n==='ravenwick')continue;
+    const T=LOC[n],other=L.r&&T.r&&L.r!==T.r;
+    let t,sub;
+    if(n==='crossroads'){t='Back to the fork';sub='1 day';}
+    else if(from==='crossroads'){t={shrine:'North, into the Greyspires',highwaymen:'East, into the lowlands',ferry:'West, down to the Fens'}[n];sub=(G.visited[n]?T.name:'You can see '+RUMOUR[n])+' · 1 day';}
+    else if(!G.visited[n]){t=other?`Cross into ${REGION[T.r]}`:'Press on';sub='You can see '+RUMOUR[n]+' · 1 day';}
+    else{t=`To ${T.name}`+(other?` (${REGION[T.r]})`:'');sub='1 day'+(G.done[n]&&!T.repeat?' · nothing more there':'');}
+    out.push({t,s:sub,hover:from==='crossroads'?CROSS_HOVER[n]:null,go:()=>go(n,{days:1,out:walkPath(from,n)})});
+  }
+  const hd=L.home||0;
+  out.push({t:from==='crossroads'?'Back through the gate':L.boat?'Take the barge home':'Home to Ravenwick',s:hd?`${hd} day${hd>1?'s':''} · ${L.boat?'upriver by boat':'the river path'}`:'Ravenwick is right behind you',go:()=>go('ravenwick',{days:hd,out:[[0,70,1,1,1100]]})});
+  return out;
+}
+function walkPath(from,to){
+  if(from==='crossroads')return to==='shrine'?[[-30,-26,.75,1,1000],[-50,-46,.35,0,1300]]:to==='highwaymen'?[[30,-26,.75,1,1000],[56,-46,.35,0,1300]]:[[-60,-24,.9,1,1100],[-120,-30,.7,0,1200]];
+  if(G.visited[to]&&LOC[to].home<=LOC[from].home)return [[-150,0,1,0,1700]];
+  return [[150,-4,.92,0,1800]];
+}
+const quiet=loc=>({kind:(LOC[loc].name||'').toUpperCase()+` · DAY ${G.day}`,title:LOC[loc].name,
+  body:{shrine:G.flags.shrineDark?'The altar is broken and the light is out.':'The green light burns quietly. You have done what you came to do.',
+    lost_in_mists:'The pass is clear today. You can see the whole valley.',hidden_cache:'The hollow is quiet. Sunlight on the stones.',
+    highwaymen:'The Oakwell road is empty. Only hoofprints.',ferry:'The ferryman nods you aboard. Your crossing is paid now.',fen_lights:'The lights keep their distance from you now.',
+    drowned_chapel:'The water laps at the chapel door.',stillwater:'Stillwater is putting out its lanterns.',pilgrims:'The procession has moved on. Candle-stubs on the ridge.',abandoned_wagon:'The ruts where the wagon was.',
+    hidden_pass:'You\'ve done a day\'s work here. The quarry will keep.',friendly_hamlet:'Hollin\'s market is closing up for the night.'}[loc],cap:'Where now?',ch:travelOptions(loc)});
+const S={
+crossroads:()=>({kind:`THE FORK · DAY ${G.day}`,title:'A Parting of Ways',
+  body:'Outside the gate the road splits three ways. North, it climbs to the Greyspires; east, it runs down into the lowlands; west, a track drops to the river and the Fens. Each stretch of road takes a day.',cap:'Hover a road to see where it goes.',ch:travelOptions('crossroads')}),
+
+highwaymen:()=>({kind:'ENCOUNTER · ILL FORTUNE',title:'Highwaymen',body:`Four masked riders block the Oakwell road and demand a toll of ${Y.toll} Coin. The lantern gutters. Nobody moves first.`,cap:'Oakwell road · dusk',ch:[
+  ...(hasItem('signet')?[{t:'Show the signet',who:holder('signet'),s:'A dead lord\'s ring · they may know it',go:()=>beat(async()=>{const a=holder('signet');await goTo(a,box(a).x+18,box(a).y+box(a).h-8,1,800);
+     const [x,y]=head(a);spark(x,y,20,'255,230,150',.6,.6);A.sfx('gain');await Promise.all(['r0','r1','r2','r3'].map((r,i)=>sleep(i*150).then(()=>tw(r,{dy:2},300)).then(()=>tw(r,{dx:(i<2?-1:1)*90,a:0},1400))));
+     G.flags.ridersGone=true;gain({Coin:Y.market});await back(a);outcome('THE RING','They look at the crest, then at each other, and ride away without a word. Oakwell market pays fairly. +'+Y.market+' Coin.')})}]:[]),
+  {t:'Raise the ward',who:'m_cleric',s:'Spend 1 Ward · they will not cross holy light',c:{Ward:1},go:()=>beat(async()=>{pay({Ward:1});
+     await tw('m_cleric',{dx:16,dy:-8},700);const [x,y]=lantern();A.sfx('ward');ring(x,y,'255,214,140',1600,170);flash(180,'255,230,180');spark(x,y,30,'255,220,140',1.2);
+     await sleep(250);await Promise.all(['r0','r1','r2','r3'].map(r=>tw(r,{dy:-3},120).then(()=>tw(r,{dy:0},160))));A.sfx('gallop');
+     await Promise.all(['r0','r1','r2','r3'].map((r,i)=>sleep(i*120).then(()=>tw(r,{dy:-8,a:0,dx:(i<2?-1:1)*10},1200))));
+     G.flags.ridersGone=true;await tw('m_cleric',{dx:0,dy:0},600);gain({Coin:Y.market});loyal('m_cleric',1,'"The light does not ask a toll."');
+     outcome('THE WARD HOLDS',`The horses scream and wheel away over the ridge. Past them, Oakwell market pays for what you carry. +${Y.market} Coin.`)})},
+  {t:'Pay the toll',who:'m_banner',s:`Lose ${Y.toll} Coin · they let you through to Oakwell`,c:{Coin:Y.toll},go:()=>beat(async()=>{pay({Coin:Y.toll});
+     await goTo('m_banner',box('m_banner').x+16,box('m_banner').y+box('m_banner').h-8,1,700);const [x,y]=head('m_banner');for(let i=0;i<4;i++){spark(x,y,6,'255,214,110',.6,.8);await sleep(120)}A.sfx('coin');
+     await Promise.all([tw('r0',{dx:-50},1000),tw('r1',{dx:-30},1000),tw('r2',{dx:30},1000),tw('r3',{dx:50},1000)]);
+     await walkOut([[0,-34,.65,0,1500]]);G.flags.ridersGone=true;gain({Coin:Y.market+1});
+     await sleep(300);for(const m of MEMBERS)Object.assign(st(m),{dx:0,dy:0,sc:1,a:0,walk:0});await Promise.all(MEMBERS.map(m=>tw(m,{a:1},500)));
+     loyal('m_captain',-1,'"We paid them. We paid them." Brannoc won\'t look at you.');
+     outcome('THROUGH',`They part like a curtain, laughing. Oakwell market is two hours on. You sell what you can. +${Y.market+1} Coin.`)})},
+  {t:'Draw steel',who:actorFor('steel'),s:'Their purses are heavy'+(carries(actorFor('steel')||'x','steel')?' · the fen-iron sword keeps the bearer whole':' · whoever fights may be wounded'),go:()=>beat(async()=>{const a=actorFor('steel');
+     const q=await strike(a,'Might',`${CO[a].short} charges the riders`);st(a).walk=1;await tw(a,{dx:18,dy:-30,sc:.85},500);A.sfx('clash');flash(140);shake(q==='great'?800:500,q==='great'?4:3);const r=box('r1');spark(r.x+8,r.y+8,40,'255,240,200',1.6);
+     A.sfx('gallop');await Promise.all(['r0','r1','r2','r3'].map((r,i)=>tw(r,{dx:[-150,-110,120,160][i],dy:-4,a:0},900)));G.flags.ridersGone=true;
+     await tw(a,{dx:6,dy:-6,sc:1},500);st(a).walk=0;
+     const safe=q==='great'||(q==='good'&&((a==='m_captain'&&G.loyal.m_captain>=5)||carries(a,'steel')));const take=Y.steel+(q==='great'?1:0)-(q==='miss'?1:0);gain({Coin:take});(G.gear[a]=G.gear[a]||[]).push('A highwayman\'s saddlebag');
+     if(!safe){A.sfx('hurt');G.hurt[a]=q==='miss'?3:2}await tw(a,{dy:0,dx:0},400);
+     if(a==='m_captain')loyal('m_captain',1,safe?'"Not a scratch."':'"Worth it." He is bleeding, and grinning.');
+     outcome('STEEL IN THE DUSK',(q==='great'?'A perfect charge. ':q==='miss'?'A clumsy, bloody fight. ':'')+`They break and scatter and leave a saddlebag behind. +${take} Coin.`+(safe?'':` ${CO[a].short} took a blade in the arm: wounded for ${G.hurt[a]} days.`))})}]}),
+
+shrine:()=>({kind:'DISCOVERY',title:'The Spire Shrine',body:'Green light pools around a statue no one remembers. Its altar is cut from good grey stone.',cap:'Greyspires · night · Aldous has gone very quiet',ch:[
+  {t:'Kneel and pray',who:'m_cleric',s:'+1 Ward',go:()=>beat(async()=>{await goTo('m_cleric',165,153,.85,1500);
+     await tw('m_cleric',{dy:st('m_cleric').dy+3},300);A.sfx('prayer');ring(160,110,'170,255,190',2000,120);await tw('light',{lit:.8},800);
+     const [x,y]=head('m_cleric');spark(x,y,30,'190,255,200',.6,.6);await tw('light',{lit:0},900);gain({Ward:1});await back('m_cleric',1300);
+     loyal('m_cleric',1,'"It remembers us. It remembers everyone."');
+     outcome('IT LISTENS','For a moment the statue seems to lean toward you. +1 Ward.')})},
+  {t:'Haul the fallen stones',who:'m_captain',s:`+${Y.shrineHaul+(hasItem('mule')?1:0)} Stone · a slow, honest load`,go:()=>haul(Y.shrineHaul,165,150)},
+  {t:'Pry loose the altar',s:'+6 Stone · the light will go out',go:()=>beat(async()=>{
+     const crew=['m_captain','m_tracker','m_banner'].filter(here).slice(0,2);
+     await Promise.all(crew.map((m,i)=>goTo(m,152+i*14,152,.85,1400)));
+     for(let i=0;i<5;i++){shake(160,1.5);A.sfx('stone');spark(160,140,8,'160,170,160',1);await sleep(300)}
+     A.sfx('rumble');await Promise.all([tw('light',{a:0},1400),tw('candles',{a:0},900)]);G.flags.shrineDark=true;gain({Stone:6});
+     await Promise.all(crew.map(m=>back(m,1300)));
+     loyal('m_cleric',-3,'Aldous says nothing at all.');loyal('m_tracker',1,'"Good stone is good stone."');
+     outcome('THE LIGHT GOES OUT','The altar comes apart in good square blocks. +6 Stone.')})}]}),
+
+lost_in_mists:()=>({kind:'ENCOUNTER · THE HIGH PASS',title:'The Grey Mist',body:'Mist pours down the pass until you can\'t see your own hands. Somewhere ahead, water; somewhere behind, the drop.',cap:'Greyspires · noon, though you\'d never know it',ch:[
+  ...(hasItem('jar')?[{t:'Follow the marsh-light',who:holder('jar'),s:`The jar glows brighter near the old road · +${Y.mists} Stone`,go:()=>beat(async()=>{for(const m of ALL4())tw(m,{dx:40,a:.5},1500);await sleep(1600);A.sfx('ward');
+     await twAll('fog',{a:.3},1000);gain({Stone:Y.mists});for(const m of ALL4())tw(m,{dx:0,a:1},1200);await twAll('fog',{a:1},1200);outcome('THE OLD ROAD','The light in the jar leads you along a buried road to a waymarker cairn. +'+Y.mists+' Stone.')})}]:[]),
+  {t:'Follow Ness',who:'m_tracker',s:`Pathfind · Ness knows these heights · +${Y.mists} Stone`,go:()=>beat(async()=>{
+     await goTo('m_tracker',230,176,1,900);await tw('m_tracker',{a:.25},800);for(const m of ALL4().filter(x=>x!=='m_tracker'))tw(m,{dx:30,a:.4},1400);await sleep(1500);
+     await twAll('fog',{a:.3},1200);A.sfx('stone');shake(300,.8);gain({Stone:Y.mists});
+     for(const m of ALL4())tw(m,{dx:0,dy:0,a:1},1200);await twAll('fog',{a:1},1200);
+     loyal('m_tracker',1,'"Told you. Mist is only weather."');
+     outcome('A CAIRN IN THE MIST',`Ness leads you to an old waymarker cairn of cut blocks, forgotten up here for a century. +${Y.mists} Stone.`)})},
+  {t:'Push on blind',s:'Maybe stone, maybe a fall',go:()=>beat(async()=>{
+     for(const m of ALL4())tw(m,{dx:40,a:.4},1600);await sleep(1700);
+     const q=await strike('m_banner','Wits','You feel for the path');
+     if(q!=='miss'&&(q==='great'||Math.random()<Y.mistsLuck+.25)){gain({Stone:q==='great'?3:2});for(const m of ALL4())tw(m,{dx:0,a:1},1000);await sleep(1100);outcome('LUCK',`You stumble on a ruined wall and take what you can carry. +${q==='great'?3:2} Stone.`)}
+     else{const v=ALL4().filter(m=>m!=='m_banner');const m=v[Math.floor(Math.random()*v.length)]||'m_banner';A.sfx('hurt');shake(400,2);G.hurt[m]=2;
+       for(const x of ALL4())tw(x,{dx:0,a:1},1000);await sleep(1100);loyal('m_tracker',-1,'"I could have led us." Ness is furious.');
+       outcome('A FALL',`${CO[m].name} slips on wet shale and goes down hard. Wounded for 2 days. You come down with nothing.`)}})},
+  {t:'Wait for it to lift',s:'Lose a day · safe',go:()=>beat(async()=>{for(let i=0;i<=10;i++){G.dim=i/14;await sleep(70)}endOfDay('x','x');await sleep(500);for(let i=10;i>=0;i--){G.dim=i/14;await sleep(70)}
+     outcome('A LOST DAY','The mist lifts at dawn on a bare, empty pass. A day gone.')})}]}),
+
+hidden_cache:()=>({kind:'DISCOVERY',title:'The Sunlit Hollow',body:'Light falls through the trees onto a ring of low stones. Between them, half-buried, the corner of an iron-bound box.',cap:'Greyspires foothills · morning',ch:[
+  {t:'Dig it up',who:'m_tracker',s:'Whatever is in it',go:()=>beat(async()=>{await goTo('m_tracker',170,152,.9,1200);for(let i=0;i<4;i++){spark(170,150,6,'140,110,70',.8,.6);A.sfx('step');await sleep(220)}
+     A.sfx('coin');spark(170,146,30,'255,220,120',1,.8);gain({Coin:Y.hollow});getItem('signet');await back('m_tracker');
+     loyal('m_tracker',1,'Ness bites a coin and grins.');loyal('m_cleric',-1,'"These were graves, Wren."');
+     outcome('OLD SILVER',`Coins nobody has spent in a hundred years, and a signet ring with a crest the lowland riders might remember. +${Y.hollow} Coin, and the Signet.`)})},
+  {t:'Leave the dead their silver',who:'m_cleric',s:'Aldous will say the words · +1 Ward',go:()=>beat(async()=>{await goTo('m_cleric',160,152,.9,1300);A.sfx('prayer');ring(165,140,'255,240,200',1800,90);await sleep(1600);await back('m_cleric');
+     loyal('m_cleric',1,'"Rest. Rest now."');gain({Ward:1});learn('herbs');outcome('THE WORDS ARE SAID','The light in the hollow seems warmer as you leave. Between the stones, Aldous finds feverfew and woundwort, and knows them. +1 Ward.')})}]}),
+
+hidden_pass:()=>({kind:'THE OLD QUARRY',title:'Under the Snowline',body:'Someone cut stone here long ago and left the blocks where they fell. Above, on the cliff, the best of it, glittering with ice.',cap:'Greyspires · always here when you need stone · one job per visit',ch:[
+  {t:'Haul what lies below',who:'m_captain',s:`+${Y.quarry+(hasItem('mule')?1:0)} Stone`,go:()=>haul(Y.quarry,170,170)},
+  {t:'Climb for the good stone',who:actorFor('climb'),s:`+${Y.climb+(carries(actorFor('climb')||'x','climb')?1:0)} Stone · `+(carries(actorFor('climb')||'x','climb')?'the irons will hold':'it\'s a long way down'),go:()=>beat(async()=>{const a=actorFor('climb'),ir=carries(a,'climb');await goTo(a,236,120,.6,1600);
+     for(let i=0;i<3;i++){A.sfx('stone');spark(236,118,8,'200,200,210',1);await sleep(300)}
+     const q=await strike(a,'Stealth',`${CO[a].short} reaches for the next hold`);
+     const fall=q==='miss'?!ir:q==='good'&&!(a==='m_tracker'&&G.loyal.m_tracker>=5)&&!ir&&Math.random()<Y.climbFall/2,n=Y.climb+(ir?1:0)+(q==='great'?1:0);
+     if(fall){A.sfx('hurt');shake(500,2.5);await tw(a,{dy:st(a).dy+30},300);G.hurt[a]=3;gain({Stone:2})}else gain({Stone:n});
+     await back(a,1400);
+     outcome(fall?'A FALL':'GOOD STONE',fall?`The ice gives way. ${CO[a].short} lands badly but holds onto two blocks. +2 Stone. ${CO[a].short} is wounded for 3 days.`:`${CO[a].short} lowers block after block on a rope. +${n} Stone.`)})}]}),
+
+pilgrims:()=>({kind:'ENCOUNTER · THE LOWLANDS',title:'The Long Procession',body:'Pilgrims walk the ridge with lanterns, bound for a shrine in the north. They are thin, and they are singing.',cap:'the lowlands · dusk',ch:[
+  {t:'Share your bread',who:'m_banner',s:'−2 Bread · they will remember Ravenwick',c:{Bread:2},go:()=>beat(async()=>{pay({Bread:2});await goTo('m_banner',150,160,.9,1200);spark(150,145,20,'255,220,150',.6,.6);A.sfx('gain');await back('m_banner');
+     loyal('m_cleric',1,'"That was well done."');loyal('m_tracker',-1,'Ness watches the bread go with real pain.');gain({Ward:1});
+     outcome('BLESSED','An old woman presses a charm into your hand: a little lead lantern. +1 Ward.')})},
+  {t:'Walk with them a while',who:'m_cleric',s:'Aldous will pray with them',go:()=>beat(async()=>{await goTo('m_cleric',140,150,.8,1600);A.sfx('prayer');await sleep(1500);await back('m_cleric',1500);
+     loyal('m_cleric',1,'Aldous comes back looking ten years younger.');getItem('satchel');outcome('A HYMN','Their song stays with you for the rest of the day. A herb-woman among them gives Aldous her old satchel.')})},
+  {t:'Ask for alms for Ravenwick',who:'m_banner',s:`+${Y.alms} Coin · they are poor`,go:()=>beat(async()=>{await goTo('m_banner',150,160,.9,1200);A.sfx('coin');gain({Coin:Y.alms});await back('m_banner');
+     loyal('m_cleric',-1,'"From pilgrims, Wren?"');outcome('ALMS',`They give, because they give to everyone. +${Y.alms} Coin.`)})}]}),
+
+abandoned_wagon:()=>({kind:'ENCOUNTER · THE LOWLANDS',title:'An Overturned Wagon',body:'A grain wagon on its side in the ruts. No horse, no driver, no sign of a fight. The crows have already been at the sacks.',cap:'the east road · morning',ch:[
+  {t:'Search it',who:'m_tracker',s:`+${Y.wagon} Bread, +1 Coin`,go:()=>beat(async()=>{await goTo('m_tracker',236,168,.95,1300);for(let i=0;i<3;i++){shake(120,.6);A.sfx('step');await sleep(250)}
+     gain({Bread:Y.wagon,Coin:1});await back('m_tracker');outcome('SALVAGE',`Good sacks and a strongbox with one coin in it. +${Y.wagon} Bread, +1 Coin.`)})},
+  {t:'Right it and drag it home',who:'m_captain',s:`+${Y.wagon} Bread, +1 Stone (the axle iron) · Brannoc strains`,go:()=>beat(async()=>{await goTo('m_captain',236,168,.95,1300);A.sfx('stone');shake(600,1.5);await sleep(500);
+     gain({Bread:Y.wagon,Stone:1});loyal('m_captain',1,'"Good honest work."');await back('m_captain');outcome('HAULED',`You take the wagon too. +${Y.wagon} Bread, +1 Stone.`)})},
+  {t:'Look for the driver',who:'m_cleric',s:'Someone may need help',go:()=>beat(async()=>{await goTo('m_cleric',260,160,.8,1600);await sleep(900);await back('m_cleric',1600);
+     loyal('m_cleric',1,'"We found him. He\'s buried now."');loyal('m_tracker',-1,'"Wasted the morning."');gain({Bread:2});outcome('TOO LATE','The driver is in the ditch. Aldous buries him. You take the grain afterwards. +2 Bread.')})}]}),
+
+friendly_hamlet:()=>({kind:'THE HAMLET OF HOLLIN',title:'Hollin Market',body:'Five cottages and a well, and a market every night the weather allows. They have heard of Ravenwick.',cap:'the lowlands · always open · one deal per visit',ch:[
+  {t:'Sell grain',s:`2 Bread → ${Y.sell+(hasItem('signet')?1:0)+(knows('haggle')?1:0)} Coin`,c:{Bread:2},go:()=>beat(async()=>{pay({Bread:2});await goTo('m_banner',170,156,.9,1000);A.sfx('coin');gain({Coin:Y.sell+(hasItem('signet')?1:0)+(knows('haggle')?1:0)});await back('m_banner');outcome('','Coin for bread. Ravenwick needs its tower.')})},
+  {t:'Buy grain',s:`1 Coin → ${3+(knows('haggle')?1:0)} Bread`,c:{Coin:1},go:()=>beat(async()=>{pay({Coin:1});await goTo('m_banner',170,156,.9,1000);A.sfx('gain');gain({Bread:3+(knows('haggle')?1:0)});await back('m_banner');outcome('','Sacks of Hollin barley.')})},
+  ...(owned('mule')?[]:[{t:'Buy a pack mule',s:'3 Coin · every haul of stone brings +1',c:{Coin:3},go:()=>beat(async()=>{pay({Coin:3});getItem('mule');await sleep(600);outcome('A MULE','Her name is Turnip. She bites.')})}]),
+  {t:'Stay the night',s:'Everyone rests and the wounded mend · a day passes',go:()=>beat(async()=>{for(let i=0;i<=10;i++){G.dim=i/14;await sleep(70)}endOfDay('x','x');for(const m in G.hurt)delete G.hurt[m];
+     for(let i=10;i>=0;i--){G.dim=i/14;await sleep(70)}for(const m of ['m_cleric','m_captain'])loyal(m,1);learn('haggle');outcome('A WARM NIGHT','Ale, a fire, and real beds. The wounded are mended, and the innkeeper teaches you how Hollin really trades.')})}]}),
+
+ferry:()=>({kind:'THE FENS',title:'The Old Ferry',body:`A raft on a rope across the river, and a ferryman with a lantern. He wants ${Y.ferry} Coin to take you over into the Fens. He lost a son to this water in the spring.`,cap:'the river · dusk',ch:[
+  {t:'Pay the ferryman',s:`−${Y.ferry} Coin`,c:{Coin:Y.ferry},go:()=>beat(async()=>{pay({Coin:Y.ferry});A.sfx('coin');for(const m of ALL4())goTo(m,176+(MEMBERS.indexOf(m)-1.5)*8,131,.8,1400);await sleep(1500);
+     await Promise.all([tw('ferry',{dx:40},2200),...ALL4().map(m=>tw(m,{dx:st(m).dx+40},2200))]);await Promise.all(ALL4().map(m=>back(m,1)));await tw('ferry',{dx:0},1);
+     outcome('ACROSS','He poles you over without a word. The far bank smells of peat and old water.')})},
+  {t:'Bless the water for his son',who:'m_cleric',s:'He\'ll take you for nothing',go:()=>beat(async()=>{await goTo('m_cleric',150,150,.9,1300);A.sfx('prayer');ring(176,128,'200,230,255',2200,110);await sleep(1800);await back('m_cleric');
+     loyal('m_cleric',1,'"The river gives back, sometimes. Not often."');learn('fishing');outcome('A BLESSING','The ferryman weeps a little, and takes you across for nothing. You cross free from now on. While you wait, he shows Ness how the fen-folk set their lines.')})},
+  {t:'Wade the ford upriver',who:'m_tracker',s:'Free · soaked stores, −1 Bread',go:()=>beat(async()=>{await goTo('m_tracker',120,170,1,1000);for(const m of ALL4())tw(m,{dy:st(m).dy+4,a:.7},1200);A.sfx('whoosh');await sleep(1400);
+     gain({Bread:-1});for(const m of ALL4())tw(m,{dy:0,dx:0,a:1},1000);await sleep(1100);loyal('m_tracker',1,'"Ferrymen. Ha."');outcome('COLD WATER','Up to your chests and the current pulling. Everyone makes it. The bread doesn\'t.')})}]}),
+
+fen_lights:()=>({kind:'ENCOUNTER · THE FENS',title:'Lights on the Water',body:'Pale lights drift over the black water between dead trees. Locals say they lead to the drowned, and to what the drowned were carrying.',cap:'the Fens · night',ch:[
+  {t:'Mark a safe path',who:'m_tracker',s:`Ness tests every step · +${Y.purse} Coin`,go:()=>beat(async()=>{await goTo('m_tracker',176,150,.85,1600);await sleep(600);A.sfx('coin');spark(176,140,20,'255,220,120',.8,.6);gain({Coin:Y.purse});await back('m_tracker',1400);
+     loyal('m_tracker',1);outcome('A DROWNED PURSE',`Under the lights, a skeleton in the reeds with his purse still tied on. +${Y.purse} Coin.`)})},
+  {t:'Catch one in a jar',who:'m_cleric',s:'A light that finds safe ways',go:()=>beat(async()=>{await goTo('m_cleric',150,150,.9,1400);A.sfx('prayer');await twAll('wisps',{dx:-20,dy:20},1600);ring(150,135,'190,255,200',1600,60);
+     getItem('jar');await twAll('wisps',{dx:0,dy:0,a:.6},1200);await back('m_cleric');loyal('m_cleric',1,'"It is only lost. Like the rest of us."');loyal('m_tracker',-1,'"Leave them be, old man."');
+     outcome('A MARSH-LIGHT','One light comes to Aldous\'s hand like a moth, and settles in his lantern-jar. You have the Marsh-light.')})},
+  {t:'Follow the lights',s:'Something, or someone, is out there',go:()=>beat(async()=>{for(const m of ALL4())tw(m,{dx:60,a:.4},1800);await twAll('wisps',{dx:40},1800);
+     if(Math.random()<Y.wispLuck){A.sfx('ward');gain({Ward:2});for(const m of ALL4())tw(m,{dx:0,a:1},1200);await twAll('wisps',{dx:0},1200);outcome('A RELIC','The lights circle a reliquary in the reeds: a saint\'s fingerbone in silver. +2 Ward.')}
+     else{const v=ALL4().filter(m=>m!=='m_banner');const m=v[Math.floor(Math.random()*v.length)]||'m_banner';A.sfx('hurt');G.hurt[m]=2;for(const x of ALL4())tw(x,{dx:0,a:1},1200);await twAll('wisps',{dx:0},1200);
+       outcome('THE DEEP WATER',`The ground gives way under ${CO[m].name}. You haul them out, half-drowned. Wounded for 2 days.`)}})}]}),
+
+drowned_chapel:()=>({kind:'DISCOVERY · THE FENS',title:'The Drowned Chapel',body:'A chapel half under the lake, its bell still hanging in the tower. In the crypt, they say, a fen-knight was buried with his sword.',cap:'the Fens · moonlight',ch:[
+  {t:'Dive for the bell',who:'m_captain',s:'The Saint\'s Bell: +1 Ward each time you rest at home',go:()=>beat(async()=>{await goTo('m_captain',172,156,.85,1400);const q=await strike('m_captain','Might','Brannoc holds his breath');A.sfx('whoosh');spark(172,150,26,'200,215,235',.9,.9);await tw('m_captain',{a:.2},600);await sleep(800);
+     A.sfx('ward');await tw('bell',{a:0},900);getItem('bell');await tw('m_captain',{a:1},600);if(q==='miss'){A.sfx('hurt');G.hurt.m_captain=2}await back('m_captain');loyal('m_captain',1,'"Heavier than it looks."');loyal('m_cleric',1);
+     outcome('THE SAINT\'S BELL','Brannoc comes up blue with cold and the bell on his shoulder. It will hang in Ravenwick.'+(q==='miss'?' He swallowed half the lake: wounded for 2 days.':''))})},
+  {t:'Search the crypt',who:'m_tracker',s:'The fen-knight\'s sword: Brannoc is never wounded',go:()=>beat(async()=>{await goTo('m_tracker',140,156,.85,1400);await tw('m_tracker',{a:.15},700);await sleep(900);A.sfx('clash');await tw('m_tracker',{a:1},600);await back('m_tracker');
+     getItem('sword');loyal('m_cleric',-1,'"We do not rob the dead."');outcome('FEN-IRON','A long blade, black and unrusted after a hundred years under water. Ness hands it to Brannoc without a word.')})},
+  {t:'Take the dressed stone',s:`+${Y.chapel} Stone · Aldous will hate it`,go:()=>beat(async()=>{const crew=['m_captain','m_banner'].filter(here);await Promise.all(crew.map((m,i)=>goTo(m,150+i*14,156,.85,1300)));
+     for(let i=0;i<4;i++){A.sfx('stone');shake(150,1.2);await sleep(300)}gain({Stone:Y.chapel});await Promise.all(crew.map(m=>back(m)));loyal('m_cleric',-2,'"A house of God, Wren."');
+     outcome('DRESSED STONE',`Cut and squared, and easy to carry off. +${Y.chapel} Stone.`)})},
+  {t:'Say a mass for the drowned',who:'m_cleric',s:'+2 Ward',go:()=>beat(async()=>{await goTo('m_cleric',160,156,.9,1300);_sfx('prayer');fx('holy/holy-pillar',172,112);ring(172,70,'255,240,200',2200,90);await tw('bell',{lit:.8},800);await tw('bell',{lit:0},800);
+     gain({Ward:2});await back('m_cleric');loyal('m_cleric',1,'"They heard. I know they heard."');outcome('THE BELL TOLLS','When Aldous finishes, the drowned bell rings once by itself. +2 Ward.')})}]}),
+
+stillwater:()=>({kind:'THE FENS',title:'Stillwater',body:'Huts on stilts and boats between them. The fen-folk trade eels and iron, and run a barge upriver to Ravenwick.',cap:'the Fens · always open · one deal per visit · the barge home takes 1 day',ch:[
+  {t:'Buy smoked eels',s:`1 Coin → ${3+(knows('haggle')?1:0)} Bread`,c:{Coin:1},go:()=>beat(async()=>{pay({Coin:1});await goTo('m_banner',150,156,.9,1000);gain({Bread:3+(knows('haggle')?1:0)});await back('m_banner');outcome('','Strings of smoked eel. Better than it sounds.')})},
+  ...(owned('irons')?[]:[{t:'Buy climbing irons',s:'2 Coin · gear: lets the bearer climb safely for +1 Stone',c:{Coin:2},go:()=>beat(async()=>{pay({Coin:2});getItem('irons');await sleep(600);outcome('CLIMBING IRONS','Fen-forged spikes for the boots and hands.')})}]),
+  ...(owned('traps')?[]:[{t:'Buy eel traps',s:'1 Coin · +1 Bread every day',c:{Coin:1},go:()=>beat(async()=>{pay({Coin:1});getItem('traps');await sleep(600);outcome('EEL TRAPS','Wicker traps for the river at Ravenwick.')})}]),
+  {t:'Sell grain',s:'2 Bread → 1 Coin · they have eels, they don\'t need bread',c:{Bread:2},go:()=>beat(async()=>{pay({Bread:2});gain({Coin:1});await sleep(500);outcome('','A poor price.')})}]}),
+
+ravenwick:()=>{
+  if(G.sub==='end'){const win=G.win,left=MEMBERS.filter(m=>G.party[m]!=='gone').length;
+    return win?{kind:'THE FIRST NIGHT OF WINTER',title:'Ravenwick Watches',
+      body:'They came down out of the Greyspires in the snow: dozens of them, and something vast behind the ridge. The watchtower saw them first. The beacon was lit, the bells rang, and they turned back into the dark. For now.',
+      cap:`Season 1 won on day ${G.endDay}${G.endDay<G.maxDay?', with '+(G.maxDay-G.endDay)+' days to spare':''} · ${left} of 4 still with you`,ch:[{t:'Play again',s:'',go:()=>location.reload()}]}
+    :{kind:'THE FIRST NIGHT OF WINTER',title:'Ravenwick Falls',
+      body:`They came down out of the Greyspires in the snow, and nobody saw them coming. ${G.built.walls?'The walls held for an hour.':'There were no walls to hold them.'} By morning the fires were out.`,
+      cap:'Defeat · Season 1. You need BOTH walls and a watchtower. Press on through a region instead of walking back and forth: each step deeper is one day, and Ravenwick is never more than two days away.',
+      ch:[{t:'Try again',s:'',go:()=>location.reload()}]}}
+  if(G.sub==='thieves')return {kind:'TROUBLE AT HOME',title:'Thieves at the Stores',body:'Two hooded shapes and a sack, by the grain store. Every night they take a little more.',cap:'−1 Bread a day until dealt with · walls would stop them for good',ch:[
+    {t:'Run them down',who:'m_captain',s:'They\'ll stay away a few days',go:()=>beat(async()=>{const b=box('thieves');const q=await strike('m_captain','Might','Brannoc gives chase');await goTo('m_captain',b.x+4,b.y+b.h+4,.8,900);A.sfx('whoosh');
+       await tw('thieves',{dx:60,a:0},900);G.thievesBack=G.day+(q==='miss'?2:q==='great'?99:4);endTrouble();if(q!=='miss')gain({Bread:q==='great'?2:1});await back('m_captain',900);loyal('m_captain',1);
+       outcome('CAUGHT OUT',q==='miss'?'They get away with the sack. They\'ll be back.':q==='great'?'He catches one by the collar. They won\'t come back. +2 Bread.':'They drop the sack and run for the trees. +1 Bread back.')})},
+    {t:'Follow them home',who:'m_tracker',s:'A day passes · end it for good',go:()=>beat(async()=>{st('m_tracker').walk=1;await tw('m_tracker',{dx:-40,a:0},1400);
+       await tw('thieves',{dx:60,a:0},1200);for(let i=0;i<=10;i++){G.dim=i/12;await sleep(60)}await sleep(500);endOfDay('ravenwick','x');endTrouble();G.troublesDone.thieves=1;
+       for(let i=10;i>=0;i--){G.dim=i/12;await sleep(60)}await tw('m_tracker',{dx:0,a:1},1200);st('m_tracker').walk=0;gain({Coin:2});loyal('m_tracker',1,'"Easy money."');
+       outcome('BY MORNING','Deserters, holed up in a charcoal-burner\'s hut. Ness walked off with their purse while they slept. +2 Coin. They won\'t be back.')})},
+    {t:'Ward the stores',who:'m_cleric',s:'Spend 1 Ward · for good',c:{Ward:1},go:()=>beat(async()=>{pay({Ward:1});const b=box('thieves');A.sfx('ward');ring(b.x+8,b.y+6,'255,214,140',1500,70);
+       flash(150,'255,230,180');await tw('thieves',{a:0,dy:-4},1200);endTrouble();G.troublesDone.thieves=1;outcome('WARDED','Light hangs over the grain store. Nobody comes near it now.')})},
+    {t:'Not now',s:'',go:()=>{G.sub=null;render()}}]};
+  if(G.sub==='fire')return {kind:'TROUBLE AT HOME',title:'Fire!',body:'The thatch on the middle cottage has caught. Sparks are drifting toward the grain store.',cap:'−2 Bread a day while it burns',ch:[
+    {t:'Call down rain',who:'m_cleric',s:'Spend 1 Ward',c:{Ward:1},go:()=>beat(async()=>{pay({Ward:1});A.sfx('prayer');await sleep(500);G.raining=true;A.sfx('rain');await sleep(1800);
+       await tw('fire',{a:0},1500);endTrouble();await sleep(1200);G.raining=false;loyal('m_cleric',1,'"Did you doubt it?"');outcome('RAIN','A cold, hard rain from a clear sky. The fire hisses out.')})},
+    {t:'Everyone to the well',s:'Put it out by hand · someone may be burned',go:()=>beat(async()=>{const b=box('fire');const q=await strike('m_banner','Might','You lead the bucket line');await Promise.all(ALL4().map((m,i)=>goTo(m,b.x+6+i*7,b.y+b.h+16,.8,1100)));
+       for(let i=0;i<6;i++){spark(b.x+15,b.y+10,10,'200,210,230',.8,.5);A.sfx('whoosh');await sleep(260)}await tw('fire',{a:0},900);endTrouble();
+       const burned=q==='miss'||(q==='good'&&Math.random()<.3)?ALL4().filter(m=>m!=='m_banner')[0]:null;if(burned){A.sfx('hurt');G.hurt[burned]=2}
+       await Promise.all(ALL4().map(m=>back(m,1100)));if(q!=='great')gain({Bread:-1});
+       outcome('OUT',`Smoke, shouting, buckets. It\'s out. You lost a little grain.${burned?' '+CO[burned].name+' is burned: wounded for 2 days.':''} −1 Bread.`)})},
+    {t:'Save the grain, let it burn',s:'Lose the cottage: −2 Stone',go:()=>beat(async()=>{A.sfx('fire');await sleep(1500);await tw('fire',{a:0},2000);endTrouble();gain({Stone:-2});
+       outcome('ASHES','You drag the sacks clear and watch the cottage go. Rebuilding will cost stone. −2 Stone.')})}]};
+  if(G.sub==='refugees')return {kind:'TROUBLE AT HOME',title:'At the Gate',body:'A family with a handcart, from somewhere in the Greyspires. They won\'t say what drove them out. They want to stay.',cap:'',ch:[
+    {t:'Take them in',s:'−2 Bread now · they\'ll cut stone each time you rest',c:{Bread:2},go:()=>beat(async()=>{pay({Bread:2});await tw('refugees',{dx:40,a:.9},1800);G.refugeesIn=true;endTrouble();learn('masonry');
+       loyal('m_cleric',1,'"Welcome, all of you."');loyal('m_tracker',-1,'"More mouths."');outcome('NEW HANDS','They settle in the camp by the water. The father was a quarryman, and he starts teaching Brannoc to dress stone.')})},
+    {t:'Give them bread and send them on',s:'−1 Bread · Hollin will take them',c:{Bread:1},go:()=>beat(async()=>{pay({Bread:1});await tw('refugees',{dx:-80,a:0},2200);endTrouble();loyal('m_cleric',1);
+       outcome('ON THEIR WAY','They thank you and take the east road.')})},
+    {t:'Turn them away',s:'',go:()=>beat(async()=>{await tw('refugees',{dx:-80,a:0},2200);endTrouble();loyal('m_cleric',-2,'"What did the mountain take from them, Wren? Did you even ask?"');
+       outcome('TURNED AWAY','The cart\'s wheels squeak for a long time down the road.')})}]};
+  const nb=!G.built.walls?'walls':!G.built.tower?'tower':null;const ch=[];
+  if(G.trouble)ch.push({t:{thieves:'Deal with the thieves',fire:'Deal with the fire',refugees:'Speak with the family at the gate'}[G.trouble],s:'Or click it in the picture',hover:G.trouble,go:()=>{A.sfx('click');G.sub=G.trouble;render()}});
+  if(nb)ch.push({t:nb==='walls'?'Build the walls':'Raise the watchtower',s:(nb==='walls'?'Keeps thieves out for good · ':'Your goal · ')+cost(costOf(nb))+(knows('masonry')?' (masonry)':''),c:costOf(nb),go:()=>beat(async()=>{pay(costOf(nb));G.built[nb]=1;G.reveal[nb]=performance.now();shake(1500,.8);A.sfx('build');{const b=box(nb);if(b){dust(b.x+b.w/2,b.y+b.h,20);setTimeout(()=>dust(b.x+b.w/2,b.y+b.h,24),900)}}
+     if(nb==='walls'&&G.trouble==='thieves'){await sleep(700);await tw('thieves',{dx:60,a:0},900);endTrouble();G.troublesDone.thieves=1}else await sleep(1700);
+     if(nb==='tower'){const b=box('tower');spark(b.x+6,b.y+4,40,'255,214,120',.9,.6);ring(b.x+6,b.y+20,'255,214,140',1600,120);A.sfx('ward');await sleep(900)}
+     loyal('m_captain',1);
+     outcome(nb==='walls'?'WALLS':'THE WATCHTOWER',nb==='walls'?'Stone on stone. People sleep easier.':'It stands. From the top you can see the whole road to the Greyspires.')})});
+  const wounded=MEMBERS.filter(m=>G.hurt[m]&&G.party[m]==='ok');
+  if(wounded.length&&has('m_cleric'))ch.push({t:'Tend the wounded',who:'m_cleric',s:'Mend · 1 Bread · heals '+wounded.map(nm).join(', '),c:{Bread:1},go:()=>beat(async()=>{pay({Bread:1});
+     for(const m of wounded){const [x,y]=head(m);_sfx('prayer');spark(x,y,16,'200,255,200',.5,.5);delete G.hurt[m];loyal(m,1)}await sleep(1200);outcome('MENDED','Clean linen, a salve, and a prayer.')})});
+  ch.push({t:'Rest a day',s:'Work the fields: +3 Bread instead of +1',go:()=>go('ravenwick')});
+  ch.push({t:'Set out',s:'Through the gate to the fork in the road',go:()=>go('crossroads',{days:0,out:[[150,0,1,1,1800]]})});
+  const body=[G.built.tower?'The watchtower stands.':G.built.walls?'Walls, and smoke from the chimneys.':'A camp and three cottages by the water.'];
+  if(G.trouble)body.push({thieves:'Something moves by the stores.',fire:'The middle cottage is on fire!',refugees:'Strangers wait at the edge of the camp.'}[G.trouble]);
+  return {kind:`YOUR HOLDFAST · DAY ${G.day}`,title:'Ravenwick',body:body.join(' '),cap:G.log.length?'Overnight: '+G.log.join('; ')+'.':'',ch};
+}};
+function drawMap(){
+  const svg=document.getElementById('map');let h='';
+  const vis=n=>G.visited[n]||known(n);
+  for(const a in LOC)for(const b of LOC[a].links)if(a<b&&vis(a)&&vis(b)){const A_=LOC[a],B=LOC[b],walked=G.visited[a]&&G.visited[b];
+    h+=`<line x1="${A_.x}" y1="${A_.y}" x2="${B.x}" y2="${B.y}" stroke="#efe2c8" stroke-width="1" stroke-dasharray="${walked?'3 3':'1 4'}" opacity="${walked?.7:.35}"/>`}
+  for(const n in LOC){if(!vis(n))continue;const L=LOC[n],cur=n===G.scene,v=G.visited[n];
+    h+=n==='ravenwick'?`<rect x="${L.x-5}" y="${L.y-5}" width="10" height="10" fill="${cur?'#ff7d63':'#efe2c8'}" stroke="#000" stroke-width=".5"/>`:
+      `<circle cx="${L.x}" cy="${L.y}" r="${cur?6:4}" fill="${cur?'#ff7d63':v?'#efe2c8':'rgba(0,0,0,.5)'}" stroke="#efe2c8" stroke-width="1"/>`+(v?'':`<text x="${L.x}" y="${L.y+3.5}" font-size="9" fill="#efe2c8" text-anchor="middle" font-family="Georgia">?</text>`);
+    if(cur)h+=`<text x="${L.x}" y="${L.y+(L.y>70?16:L.y>30?16:-9)}" font-size="11" fill="#ffd8a0" text-anchor="middle" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">${L.name}</text>`}
+  if(known('shrine'))h+=`<text x="276" y="17" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">Greyspires</text>`;if(known('ferry'))h+=`<text x="276" y="93" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">Fens</text>`;if(known('highwaymen'))h+=`<text x="276" y="55" font-size="10" fill="#cbbd9f" font-family="Georgia" font-style="italic" style="paint-order:stroke;stroke:#000;stroke-width:3px">lowlands</text>`;
+  svg.innerHTML=h;
+}
+function endTrouble(){G.trouble=null;G.sub=null;sound()}
+function haul(n,x,y){return beat(async()=>{const m=has('m_captain')?'m_captain':'m_banner';await goTo(m,x,y,.9,1100);
+  for(let i=0;i<3;i++){spark(x,y-4,6,'150,160,150',.7);shake(120,.6);A.sfx('stone');await sleep(300)}await back(m,1100);n+=hasItem('mule')?1:0;gain({Stone:n});
+  if(m==='m_captain')loyal('m_captain',Math.random()<.5?1:0);outcome('','Heavy going, but it is good stone. +'+n+' Stone.')})}
+
+
+/* =================================================================== the first night of winter */
+async function startEnd(win){
+  busy(true);closeSheet();const f=document.getElementById('fade');f.style.opacity=1;await sleep(700);
+  O={};G.scene='ravenwick';G.trouble=null;G.sub=null;G.msg=null;G.over=true;G.endDay=Math.min(G.day,G.maxDay);G.win=win;G.dim=0;
+  const pnl=document.getElementById('panel');pnl.style.opacity=0;document.getElementById('stage').classList.add('cine');
+  A.mood('tension');A.ambience(['gale']);A.sfx('snow');
+  const E=G.endFX={t0:performance.now(),win,eyes:[],wr:[]};
+  for(let i=0;i<30;i++)E.eyes.push({x:10+Math.random()*400,y:84+Math.random()*18,t:1800+i*160+Math.random()*300,c:Math.random()<.2?'150,255,170':'255,70,40'});
+  for(let i=0;i<16;i++)E.wr.push({x0:16+Math.random()*280,y0:98+Math.random()*8,t:5000+i*240,ph:Math.random()*6,h:9+Math.random()*7});
+  render();f.style.opacity=0;
+  await sleep(2200);A.sfx('rumble');await sleep(2600);A.sfx('rumble');
+  if(win){await sleep(3200);E.beacon=performance.now();A.sfx('ward');A.sfx('build');const b=box('tower');flash(300,'255,220,160');ring(b.x+6,b.y+2,'255,200,120',2200,200);
+    await sleep(1200);A.sfx('gallop');await sleep(3600);A.mood('victory')}
+  else{await sleep(4600);await sleep(1000);E.fall=performance.now();A.sfx('clash');A.sfx('rumble');shake(1800,3);flash(500,'255,50,30');
+    for(const m of MEMBERS)tw(m,{a:0},2000);await sleep(2600);A.mood('defeat')}
+  G.sub='end';pnl.style.opacity='';document.getElementById('stage').classList.remove('cine');busy(false);render();
+}
+function endDraw(t,layer){
+  const E=G.endFX,e=(t-E.t0)*SPEED,cl=v=>Math.max(0,Math.min(1,v));
+  const back=E.beacon?cl(((t-E.beacon)*SPEED)/4000):0;
+  if(layer==='behind'){
+    const rise=cl((e-3600)/5200)*(1-back);if(rise<=0)return;
+    const y=126-rise*74,x=204;
+    ctx.fillStyle='#08050e';ctx.beginPath();ctx.ellipse(x,y+56,66,56,0,0,7);ctx.fill();
+    ctx.beginPath();ctx.moveTo(x-30,y+18);ctx.quadraticCurveTo(x-52,y+2,x-62,y-22);ctx.quadraticCurveTo(x-44,y-2,x-20,y+10);ctx.fill();
+    ctx.beginPath();ctx.moveTo(x+30,y+18);ctx.quadraticCurveTo(x+52,y+2,x+62,y-22);ctx.quadraticCurveTo(x+44,y-2,x+20,y+10);ctx.fill();
+    const g=ctx.createRadialGradient(x,y+28,0,x,y+28,34);g.addColorStop(0,`rgba(255,60,30,${.35*rise})`);g.addColorStop(1,'rgba(255,60,30,0)');ctx.fillStyle=g;ctx.fillRect(x-40,y-6,80,70);
+    ctx.fillStyle=`rgba(255,90,50,${rise})`;ctx.fillRect(Math.round(x-18),Math.round(y+27),8,2);ctx.fillRect(Math.round(x+10),Math.round(y+27),8,2);
+    return;
+  }
+  // the night darkens; on a loss it swallows Ravenwick
+  const fall=E.fall?cl(((t-E.fall)*SPEED)/2400):0;
+  ctx.fillStyle=`rgba(12,4,24,${Math.min(.38,e/7000*.38)*(1-back*.6)+fall*.55})`;ctx.fillRect(-10,-SY-10,CW+20,CH+20);
+  for(const w of E.wr){
+    if(e<w.t)continue;let p=cl((e-w.t)/6500);if(E.beacon)p*=1-back;const tx=150+(w.x0-150)*.35,ty=124;
+    const x=w.x0+(tx-w.x0)*p+Math.sin(t*.002+w.ph)*2,y=w.y0+(ty-w.y0)*p,a=cl((e-w.t)/800)*(E.beacon?1-back:1);
+    ctx.globalAlpha=a;ctx.fillStyle='#050308';ctx.beginPath();ctx.moveTo(x,y-w.h);ctx.lineTo(x-3.5,y);ctx.lineTo(x+3.5,y);ctx.fill();
+    ctx.beginPath();ctx.arc(x,y-w.h,2,0,7);ctx.fill();ctx.fillRect(Math.round(x-4+Math.sin(t*.004+w.ph)*2),Math.round(y-2),2,1);
+    ctx.fillStyle='rgba(255,70,40,.9)';ctx.fillRect(Math.round(x-1),Math.round(y-w.h),1,1);ctx.fillRect(Math.round(x+1),Math.round(y-w.h),1,1);ctx.globalAlpha=1;
+  }
+  for(const ey of E.eyes){if(e<ey.t)continue;const blink=Math.sin(t*.003+ey.x)>-.94;if(!blink)continue;
+    ctx.fillStyle=`rgba(${ey.c},${cl((e-ey.t)/600)*(1-back)})`;ctx.fillRect(Math.round(ey.x),Math.round(ey.y),1,1);ctx.fillRect(Math.round(ey.x+3),Math.round(ey.y),1,1)}
+  if(E.beacon&&box('tower')){const b=box('tower'),bx=b.x+6,by=b.y+2,f=.85+.15*Math.sin(t*.02)*Math.random();
+    const g=ctx.createRadialGradient(bx,by,0,bx,by,46);g.addColorStop(0,`rgba(255,210,120,${.7*f})`);g.addColorStop(1,'rgba(255,140,60,0)');ctx.fillStyle=g;ctx.fillRect(bx-50,by-50,100,100);
+    ctx.fillStyle='#fff0b0';ctx.fillRect(bx-2,by-4,4,4);ctx.fillStyle='#ffb050';ctx.fillRect(bx-3,by-1,6,2);if(Math.random()<.6)spark(bx,by-3,1,'255,200,100',.4,.5,-.01)}
+  if(fall>0){ctx.fillStyle=`rgba(0,0,0,${fall*.5})`;ctx.fillRect(-10,-SY-10,CW+20,CH+20)}
+}
+
+
+/* =================================================================== the opening */
+const STORY=[
+  ['intro_age','I · THE AGE OF CITADELS','Seven Beacons','Once, seven Citadels stood over the realm, and at their heart the Capital. Each kept a beacon, and on clear nights you could see them all, from the mountains to the sea.','hymn'],
+  ['intro_ruin','II · THE RUIN','The Winter Nobody Saw','Then came the Ruin. It came down out of the Greyspires in a single winter, and no one saw it coming. One by one, the beacons went out.','tension'],
+  ['intro_broken','III · THE BROKEN LAND','Three Generations On','The old realm is a rumour now: empty towers in the mist, roads that go nowhere. And every winter, something stirs in the mountains.','mist'],
+  ['ravenwick','IV · RAVENWICK','A Banner by the River','You have raised a banner at Ravenwick, below the Greyspires: three cottages, a camp, and four companions. The first snow is two weeks away. This time, someone will be watching.','home'],
+];
+const MEET={
+  m_banner:['You lead. You parley, you decide, and you carry the banner.','Parley · Command'],
+  m_cleric:['“The old lights still answer, if you ask them properly.”','Wards · Prayer · Mending the wounded'],
+  m_captain:['“Point me at it.”','Fighting · Hauling stone · Chasing off thieves'],
+  m_tracker:['“I know the passes. I’ll want paying.”','Finding paths · Tracking · Climbing'],
+};
+const story=(html,card=false)=>{const el=document.getElementById('story');el.className='hud'+(card?' card':'');el.innerHTML=html;el.style.display='block';el.style.opacity=1};
+const unstory=()=>{const el=document.getElementById('story');el.style.display='none'};
+function waitPick(ids){return new Promise(res=>{for(const [id,v] of ids){const e=document.getElementById(id);if(e)e.onclick=()=>{A.sfx('click');res(v)}}})}
+async function showScene(scene,mood){const f=document.getElementById('fade');f.style.opacity=1;await sleep(600);O={};G.scene=scene;A.mood(mood);A.ambience((SCENE_SOUND[scene]||[0,['wind']])[1]);f.style.opacity=0;await sleep(400)}
+function splash(){
+  document.getElementById('stage').classList.add('cine');G.mode='splash';
+  story(`<div class="k">A GAME OF ROADS AND WINTERS</div><h2>Quests and Encounters</h2><p>Season One · Before the Snow</p>
+    <div class="btns"><a id="b_go">Begin</a><a id="b_skipintro" class="quiet">Skip the story</a><a id="b_skipall" class="quiet">Skip story and tutorial</a></div>`);
+  waitPick([['b_go','all'],['b_skipintro','meet'],['b_skipall','none']]).then(async v=>{A.start();
+    if(v==='none')G.tutorial=false;
+    if(v==='all')await runStory();
+    if(v!=='none')await meetCompany();else await showScene('ravenwick','home');
+    startSeason()});
+}
+async function runStory(){
+  for(let i=0;i<STORY.length;i++){const [sc,k,t,txt,mood]=STORY[i];unstory();await showScene(sc,mood);
+    story(`<div class="k">${k}</div><h2>${t}</h2><p>${txt}</p><div class="btns"><a id="s_next">Continue ›</a><a id="s_skip" class="quiet">Skip the story</a></div>`);
+    if(await waitPick([['s_next',1],['s_skip',0]])===0)break}
+  unstory();if(G.scene!=='ravenwick')await showScene('ravenwick','home');
+}
+async function meetCompany(){
+  if(G.scene!=='ravenwick')await showScene('ravenwick','home');
+  G.mode='meet';story(`<div class="k">YOUR COMPANY</div><h2>Four of You</h2><p>Everything you do, one of them does. Meet them.</p><div class="btns"><a id="m_go">Meet them ›</a><a id="m_skip" class="quiet">Skip</a></div>`);
+  if(await waitPick([['m_go',1],['m_skip',0]])===0){unstory();return}
+  for(const m of MEMBERS){
+    st(m).walk=1;tw(m,{dy:-6,lit:.35},500).then(()=>st(m).walk=0);_sfx('page');
+    story(`<div class="row"><canvas width="64" height="64"></canvas><div><div class="k">${CO[m].title}</div><h2>${CO[m].name}</h2><p>${MEET[m][0]}</p><div class="sk">${MEET[m][1]}</div></div></div>
+      <div class="btns"><a id="c_next">${m==='m_tracker'?'Begin the season ›':'Next ›'}</a></div>`,true);
+    const pc=document.querySelector('#story canvas').getContext('2d');const im=new Image();im.onload=()=>pc.drawImage(im,0,0);im.src=PORTRAITS[m];
+    await waitPick([['c_next',1]]);await tw(m,{dy:0,lit:0},400)}
+  unstory();
+}
+function startSeason(){
+  G.mode=null;G.sub=null;document.getElementById('stage').classList.remove('cine');sound();render();toast('Day 1. Fourteen days to the first snow.');
+}
+
+/* =================================================================== tutorial tips */
+const $=q=>document.querySelector(q);
+const chWith=t=>[...document.querySelectorAll('#panel .ch')].find(a=>a.innerText.includes(t));
+const atHome=()=>G.scene==='ravenwick'&&!G.sub&&!G.msg;
+const TIPS=[
+  {k:'loyal',when:()=>G.want.loyal&&!G.busy,at:()=>$(`#party a[data-m="${G.want.loyal[0]}"]`),side:'below',
+   text:()=>{const [m,d]=G.want.loyal;return `<b>${CO[m].short} ${d>0?'approves':'disapproves'}.</b> The hearts by each name are <b>loyalty</b>, from 0 to 5. Choices they like raise it, choices they dislike lower it. At 0 they leave the Company for good; at 5 they become <b>Devoted</b> and gain a bonus. Each person's likes and dislikes are on their sheet.`}},
+  {k:'goal',when:atHome,at:()=>$('#goal'),side:'below',text:'<b>Your goal.</b> Build the walls, then a watchtower, before the first snow. The costs change every season.'},
+  {k:'res',when:atHome,at:()=>$('#res'),side:'below',text:'<b>What you have.</b> Stone and Coin pay for building. The Company eats 1 Bread a day. Wards are Aldous’s holy light.'},
+  {k:'party',when:atHome,at:()=>$('#party'),side:'below',text:'<b>Your Company.</b> Click a name, or a figure in the painting, to see their skills, gear and loyalty. Upset them, and they may leave.'},
+  {k:'setout',when:atHome,at:()=>chWith('Set out'),side:'left',text:'Head through the gate to explore. Ravenwick will be here when you come back.'},
+  {k:'map',when:()=>G.scene==='crossroads'&&!G.msg,at:()=>$('#map'),side:'below',text:'<b>The route map.</b> It fills in as you go. A “?” is somewhere you can see from here.'},
+  {k:'roads',when:()=>G.scene==='crossroads'&&!G.msg,at:()=>$('#panel .ch'),side:'left',text:'Each road takes a day. Hover one to light up where it leads: north for stone, east for coin, west to the Fens.'},
+  {k:'who',when:()=>LOC[G.scene]&&!['ravenwick','crossroads'].includes(G.scene)&&!G.msg&&!G.done[G.scene],at:()=>$('#panel .ch .who'),side:'left',text:'The gold name is <b>who acts</b>. If they’re wounded or gone, that choice is locked. Their stats matter in the tense moments.'},
+  {k:'search',when:()=>!G.msg&&!!chWith('lantern-light'),at:()=>chWith('lantern-light'),side:'left',text:'<b>Free, once a visit:</b> search the painting by lantern-light for things others missed.'},
+  {k:'travel',when:()=>G.msg&&!!chWith('Home to'),at:()=>$('#panel .ch'),side:'left',text:'<b>Where now?</b> Press on deeper, cross into another region, or head home. Each step is a day, and home is never more than two days away.'},
+  {k:'gear',when:()=>G.want.gear&&!G.busy,at:()=>$('#party'),side:'below',text:'<b>New gear!</b> Open anyone’s sheet to see what it does, or hand it to someone else. Whoever carries it gets the skill.'},
+  {k:'trouble',when:()=>atHome()&&G.trouble,at:()=>chWith('Deal with')||chWith('Speak with'),side:'left',text:'<b>Trouble at home</b> costs you every day until you deal with it. You can also click it in the painting.'},
+  {k:'build',when:()=>atHome()&&(!!chWith('Build the walls')||!!chWith('Raise the watchtower'))&&!document.querySelector('#panel .ch.off')?.innerText.match(/Build|Raise/),at:()=>chWith('Build the walls')||chWith('Raise the watchtower'),side:'left',text:'You can afford it. <b>Build!</b>'},
+];
+let tipOn=null;
+function runTips(){
+  if(!G.tutorial||G.mode||G.busy||G.over||tipOn||G.sheet||G.search||G.striking)return;
+  const t=TIPS.find(t=>!G.tips[t.k]&&t.when());if(!t)return;const el=t.at();if(!el)return;
+  showTip(t,el);
+}
+function showTip(t,anchor){
+  tipOn=t;const tip=$('#tip'),stage=$('#stage'),sr=stage.getBoundingClientRect(),k=sr.width/1280,r=anchor.getBoundingClientRect();
+  const ax=(r.left-sr.left)/k,ay=(r.top-sr.top)/k,aw=r.width/k,ah=r.height/k;
+  tip.innerHTML=`<div class="arr"></div>${typeof t.text==='function'?t.text():t.text}<div class="tb"><a class="quiet" id="tipskip">Skip tutorial</a><a id="tipok">Got it</a></div>`;tip.style.display='block';
+  const tw_=tip.offsetWidth,th=tip.offsetHeight,arr=tip.querySelector('.arr');
+  let x,y;
+  if(t.side==='below'){x=Math.max(16,Math.min(1280-tw_-16,ax+aw/2-tw_/2));y=ay+ah+14;arr.style.left=(ax+aw/2-x-7)+'px';arr.style.top='-8px';arr.style.borderRight=arr.style.borderBottom='none'}
+  else{x=ax-tw_-20;y=Math.max(16,Math.min(720-th-16,ay+ah/2-th/2));arr.style.left=(tw_-9)+'px';arr.style.top=(ay+ah/2-y-7)+'px';arr.style.borderLeft=arr.style.borderBottom='none'}
+  tip.style.left=x+'px';tip.style.top=y+'px';
+  anchor.style.outline='2px solid rgba(255,210,122,.8)';anchor.style.outlineOffset='4px';
+  const close=()=>{anchor.style.outline='';tip.style.display='none';tipOn=null;G.tips[t.k]=1;if(t.k==='gear')G.want.gear=0;if(t.k==='loyal')G.want.loyal=0;setTimeout(runTips,250)};
+  $('#tipok').onclick=()=>{_sfx('click');close()};
+  $('#tipskip').onclick=()=>{_sfx('click');G.tutorial=false;close()};
+}
+setInterval(runTips,400);
+
+/* =================================================================== render */
+let hurtSeen={};
+function render(){
+  for(const m in G.hurt)if(!hurtSeen[m]&&here(m)){const [hx,hy]=head(m);spark(hx,hy+4,14,'220,60,40',.7,.2);shake(250,1.2)}hurtSeen={...G.hurt};
+  if(G.mode||!S[G.scene]){document.getElementById('panel').innerHTML='';return}
+  let sc=S[G.scene]();
+  if(G.scene!=='ravenwick'&&G.scene!=='crossroads'&&!G.msg&&G.done[G.scene])sc=quiet(G.scene);
+  if(!G.msg&&LOC[G.scene]&&G.scene!=='ravenwick'&&G.scene!=='crossroads')sc={...sc,ch:[...searchOption(),...roadOptions(),...sc.ch]};
+  if(G.msg){const m=G.msg;const travel=LOC[G.scene]&&G.scene!=='ravenwick'&&G.scene!=='crossroads'&&!m.stay;
+    sc={kind:m.kind||sc.kind,title:m.title||sc.title,body:m.body,barks:m.barks,cap:travel?'Where now?':'',
+      ch:travel?travelOptions(G.scene).map(o=>({...o,go:()=>{G.msg=null;o.go()}})):[{t:'Continue',s:'',go:()=>{A.sfx('click');G.msg=null;
+      if(G.scene==='ravenwick'&&G.built.tower&&!G.over)startEnd(true);else render()}}]}}
+  const p=document.getElementById('panel');
+  const barks=(sc.barks||[]).map(([m,l])=>`<div class="bark">${m?`<b>${nm(m)}:</b> `:''}${l}</div>`).join('');
+  p.innerHTML=(sc.kind?`<div class="kind">${sc.kind}</div>`:'')+(sc.title?`<h1>${sc.title}</h1>`:'')+`<div class="body">${sc.body}</div>${barks}<div class="cap">${sc.cap||''}</div>`+
+    sc.ch.map((c,i)=>{if('who' in c&&!c.who)return `<a class="ch off">${c.t}<small>No one in the Company can do this now</small></a>`;const lockWho=c.who&&!has(c.who),lock=lockWho||!can(c.c);
+      const why=lockWho?(G.party[c.who]==='gone'?`${nm(c.who)} is gone`:`${nm(c.who)} is wounded`):(!can(c.c)?'Needs '+cost(c.c):'');
+      return `<a class="ch ${lock?'off':''}" data-i="${i}">${c.who?`<span class="who">${nm(c.who)}:</span> `:''}${c.t}${(why||c.s)?`<small>${why||c.s}</small>`:''}</a>`}).join('');
+  p.querySelectorAll('.ch').forEach(a=>{const c=sc.ch[+a.dataset.i];a.onclick=()=>{if(!G.busy)c.go()};a.onmouseenter=()=>{G.hover=c.hover||c.who||null;A.sfx('hover')};a.onmouseleave=()=>G.hover=null});
+  document.getElementById('res').innerHTML=Object.entries(G.res).map(([k,v])=>`<span class="${k==='Bread'&&v<=1?'lo':''}">${k} <b>${v}</b></span>`).join('');
+  const left=G.maxDay-G.day;
+  const needS=(G.built.walls?0:costOf('walls').Stone)+(G.built.tower?0:costOf('tower').Stone)-G.res.Stone,needC=(G.built.walls?0:COST.walls.Coin)+(G.built.tower?0:COST.tower.Coin)-G.res.Coin;
+  const stepW=G.built.walls?'<span class="done">✓ Walls</span>':`<span class="now">① Walls</span> <span class="step">(${cost(costOf('walls'))})</span>`;
+  const stepT=G.built.tower?'<span class="done">✓ Watchtower</span>':`<span class="${G.built.walls?'now':'step'}">② Watchtower</span> <span class="step">(${cost(costOf('tower'))})</span>`;
+  document.getElementById('goal').innerHTML=`<div class="big">Day ${Math.min(G.day,G.maxDay)} of ${G.maxDay} · ${left>0?left+' days to the first snow':'the snow is here'}</div>`+
+    `<div class="sm">${stepW} → ${stepT}</div>`+(G.built.tower?'':`<div class="sm">still to find: ${Math.max(0,needS)} Stone, ${Math.max(0,needC)} Coin</div>`);
+  drawMap();
+  document.getElementById('party').innerHTML=MEMBERS.map(m=>{const g=G.party[m]==='gone',h=G.hurt[m],pl=(G.pulse[m]||0)>performance.now()-1600;
+    return `<a data-m="${m}" class="${g?'gone':h?'hurt':''}${pl?' pulse':''}" onclick="openSheet('${m}')">${nm(m)}${h?' (wounded)':''}${CO[m].loyal!==null&&!g?`<span class="pips">${'♥'.repeat(G.loyal[m])}<i>${'♥'.repeat(5-G.loyal[m])}</i></span>`:''}</a>`}).join('');
+  {const gear=MEMBERS.flatMap(m=>G.eq[m]).length+G.pack.length;if(gear||G.items.length)document.getElementById('party').innerHTML+=`<span style="font-style:italic;color:#e8c98a">· ${gear} gear, ${G.items.length} stores${G.pack.length?` (${G.pack.length} unequipped)`:''}</span>`;}
+}
+const fit=()=>document.getElementById('stage').style.setProperty('--k',Math.min(innerWidth/1280,innerHeight/720));addEventListener('resize',fit);fit();
+const h=new URLSearchParams(location.hash.slice(1));if(h.get('scene')){G.scene=h.get('scene');G.sub=h.get('sub')}if(h.get('trouble'))G.trouble=h.get('trouble');if(h.get('day'))G.day=+h.get('day');
+window.G=G;render();requestAnimationFrame(loop);
+const testing=h.get('scene')||h.get('bot')||h.get('end');
+if(testing){G.mode=null;G.tutorial=false;if(!h.get('scene'))G.scene='ravenwick';render();if(!h.get('still'))(async()=>{busy(true);await walkIn();busy(false);render()})()}
+else splash();
+if(h.get('end')){G.built.walls=1;G.built.tower=h.get('end')==='win'?1:0;setTimeout(()=>startEnd(h.get('end')==='win'),300)}
+</script></body></html>
