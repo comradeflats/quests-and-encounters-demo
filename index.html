@@ -72,6 +72,10 @@
   #tip .tb{margin-top:8px;display:flex;justify-content:space-between;font-size:14px}
   #tip .tb a{cursor:pointer;color:#ffd27a}#tip .tb a.quiet{color:#8f8474}
   .cine #panel{opacity:0;pointer-events:none}
+  #lang{position:absolute;left:30px;top:112px;font-size:14px;color:#b5a88e;z-index:3}
+  #lang a{cursor:pointer;margin-right:12px}#lang a.on{color:#ffd27a;border-bottom:1px solid #ffd27a}#lang a:hover{color:#fff}
+  .cine #lang{opacity:0}
+  #story .langs{margin-top:14px;font-size:15px}#story .langs a{cursor:pointer;color:#b5a88e;margin:0 10px}#story .langs a.on{color:#ffd27a}
   #toast{position:absolute;left:50%;top:104px;transform:translateX(-50%);font-size:16px;font-style:italic;color:#ffe0a0;opacity:0;transition:opacity .5s;white-space:nowrap;z-index:3;
     background:rgba(7,6,10,.75);padding:6px 16px;border-radius:2px}
   #snd{position:absolute;left:30px;top:88px;font-size:14px;color:#b5a88e;cursor:pointer;z-index:3}
@@ -117,13 +121,17 @@
   <div id="tip" class="hud"></div>
   <div id="strike"></div>
   <div id="panel" class="hud"></div>
+  <div id="lang" class="hud"></div>
   <div id="snd" class="hud">♪ sound on · M to mute · hold Space to see the whole scene</div>
   <div id="sheet" class="hud"></div>
 </div>
-<script src="layers.js?v=1795479240"></script>
-<script src="audio.js?v=1795479240"></script>
-<script src="icons.js?v=1795479240"></script>
-<script type="module" src="fxbridge.js?v=1795479240"></script>
+<script src="layers.js?v=1795483643"></script>
+<script src="audio.js?v=1795483643"></script>
+<script src="i18n.js?v=1795483643"></script>
+<script src="i18n_ru.js?v=1795483643"></script>
+<script src="i18n_es.js?v=1795483643"></script>
+<script src="icons.js?v=1795483643"></script>
+<script type="module" src="fxbridge.js?v=1795483643"></script>
 <script>
 /* =================================================================== engine */
 const A=window.Audio2;
@@ -276,12 +284,13 @@ cv.onclick=e=>{if(G.search||G.striking)return;const h=hitAt(e);if(h)h.go()};
 // A marker sweeps a bar; strike inside the gold. The character's stat sets how wide the gold is.
 function strike(m,stat,label){
   if(window.BOT)return Promise.resolve('good');
+  if(window.FORCE_Q)setTimeout(()=>{if(G.striking){const q=window.FORCE_Q;G.striking=null;document.getElementById('strike').style.display='none';G._forced(q)}},120);
   const v=CO[m].stats[stat]||2,el=document.getElementById('strike');
   const zw=10+v*6,zc=30+Math.random()*40;
   el.innerHTML=`<div class="lbl">${label} <span style="color:#cbbd9f">· ${stat} ${'■'.repeat(v)}</span></div><div class="bar"><div class="zone" style="left:${zc-zw/2}%;width:${zw}%"></div><div class="mk"></div></div><div class="res"></div><div class="hint">click, or press Space, when the marker is in the gold</div>`;
   el.style.display='block';const mk=el.querySelector('.mk'),res=el.querySelector('.res');
   const t0=performance.now(),per=900/Math.max(.5,SPEED);let done=false;A.sfx('page');
-  return new Promise(resolve=>{
+  return new Promise(resolve=>{G._forced=resolve;
     function frame(){if(done)return;const ph=((performance.now()-t0)/per)%2,pos=(ph<1?ph:2-ph)*100;mk.style.left=pos+'%';mk.dataset.pos=pos;requestAnimationFrame(frame)}
     frame();
     G.striking=()=>{if(done)return;done=true;G.striking=null;const pos=+mk.dataset.pos,d=Math.abs(pos-zc);
@@ -413,7 +422,7 @@ function toggleSnd(){const m=A.toggle();document.getElementById('snd').textConte
 document.getElementById('snd').onclick=toggleSnd;
 
 /* =================================================================== state */
-const G={pulse:{},day:1,maxDay:14,items:[],pack:[],eq:{m_banner:[],m_cleric:[],m_captain:[],m_tracker:[]},learned:{m_banner:[],m_cleric:[],m_captain:[],m_tracker:[]},res:{Stone:1,Coin:1,Bread:5,Ward:1},built:{walls:0,tower:0},
+const G={pulse:{},day:1,maxDay:14,items:[],pack:[],eq:{m_banner:[],m_cleric:[],m_captain:[],m_tracker:[]},learned:{m_banner:[],m_cleric:[],m_captain:[],m_tracker:[]},res:{Stone:1,Coin:1,Bread:6,Ward:1},built:{walls:0,tower:0},
   party:{m_banner:'ok',m_cleric:'ok',m_captain:'ok',m_tracker:'ok'},hurt:{},loyal:{m_cleric:3,m_captain:3,m_tracker:2},gear:{},
   trouble:null,troubleSeen:{},troublesDone:{},refugeesIn:false,flags:{},
   done:{},visited:{ravenwick:1},
@@ -508,7 +517,7 @@ const leaveLine=m=>({m_cleric:'Brother Aldous will not walk with you any more. H
 function endOfDay(from,dest){
   G.day++;G.log=[];
   const rest=from==='ravenwick'&&dest==='ravenwick';
-  G.res.Bread-=1;G.res.Bread+=rest?3:1;G.log.push(rest?'you worked the fields (+3 Bread, −1 eaten)':'the fields gave 1, the Company ate 1');
+  G.res.Bread-=1;if(rest)G.res.Bread+=4;G.log.push(rest?'you worked the fields (+4 Bread, −1 eaten)':'the Company ate 1 Bread');  // the fields only feed you when you stay to work them
   if(rest&&G.refugeesIn){G.res.Stone+=1;G.log.push('the newcomers cut stone (+1)')}
   if(rest&&hasItem('bell')){G.res.Ward+=1;G.log.push('the Saint\'s Bell gave a Ward')}
   if(hasItem('traps')){G.res.Bread+=1;G.log.push('the eel traps gave 1')}
@@ -588,7 +597,7 @@ const quiet=loc=>({kind:(LOC[loc].name||'').toUpperCase()+` · DAY ${G.day}`,tit
     hidden_pass:'You\'ve done a day\'s work here. The quarry will keep.',friendly_hamlet:'Hollin\'s market is closing up for the night.'}[loc],cap:'Where now?',ch:travelOptions(loc)});
 const S={
 crossroads:()=>({kind:`THE FORK · DAY ${G.day}`,title:'A Parting of Ways',
-  body:'Outside the gate the road splits three ways. North, it climbs to the Greyspires; east, it runs down into the lowlands; west, a track drops to the river and the Fens. Each stretch of road takes a day.',cap:'Hover a road to see where it goes.',ch:travelOptions('crossroads')}),
+  body:'Outside the gate the road splits three ways. North, it climbs to the Greyspires; east, it runs down into the lowlands; west, a track drops to the river and the Fens. Each stretch of road takes a day, and a day’s Bread.',cap:'Hover a road to see where it goes.',ch:travelOptions('crossroads')}),
 
 highwaymen:()=>({kind:'ENCOUNTER · ILL FORTUNE',title:'Highwaymen',body:`Four masked riders block the Oakwell road and demand a toll of ${Y.toll} Coin. The lantern gutters. Nobody moves first.`,cap:'Oakwell road · dusk',ch:[
   ...(hasItem('signet')?[{t:'Show the signet',who:holder('signet'),s:'A dead lord\'s ring · they may know it',go:()=>beat(async()=>{const a=holder('signet');await goTo(a,box(a).x+18,box(a).y+box(a).h-8,1,800);
@@ -778,7 +787,7 @@ ravenwick:()=>{
   const wounded=MEMBERS.filter(m=>G.hurt[m]&&G.party[m]==='ok');
   if(wounded.length&&has('m_cleric'))ch.push({t:'Tend the wounded',who:'m_cleric',s:'Mend · 1 Bread · heals '+wounded.map(nm).join(', '),c:{Bread:1},go:()=>beat(async()=>{pay({Bread:1});
      for(const m of wounded){const [x,y]=head(m);_sfx('prayer');spark(x,y,16,'200,255,200',.5,.5);delete G.hurt[m];loyal(m,1)}await sleep(1200);outcome('MENDED','Clean linen, a salve, and a prayer.')})});
-  ch.push({t:'Rest a day',s:'Work the fields: +3 Bread instead of +1',go:()=>go('ravenwick')});
+  ch.push({t:'Rest a day',s:'Work the fields: +4 Bread, and the Company eats 1',go:()=>go('ravenwick')});
   ch.push({t:'Set out',s:'Through the gate to the fork in the road',go:()=>go('crossroads',{days:0,out:[[150,0,1,1,1800]]})});
   const body=[G.built.tower?'The watchtower stands.':G.built.walls?'Walls, and smoke from the chimneys.':'A camp and three cottages by the water.'];
   if(G.trouble)body.push({thieves:'Something moves by the stores.',fire:'The middle cottage is on fire!',refugees:'Strangers wait at the edge of the camp.'}[G.trouble]);
@@ -868,10 +877,14 @@ const story=(html,card=false)=>{const el=document.getElementById('story');el.cla
 const unstory=()=>{const el=document.getElementById('story');el.style.display='none'};
 function waitPick(ids){return new Promise(res=>{for(const [id,v] of ids){const e=document.getElementById(id);if(e)e.onclick=()=>{A.sfx('click');res(v)}}})}
 async function showScene(scene,mood){const f=document.getElementById('fade');f.style.opacity=1;await sleep(600);O={};G.scene=scene;A.mood(mood);A.ambience((SCENE_SOUND[scene]||[0,['wind']])[1]);f.style.opacity=0;await sleep(400)}
+const LANGS=[['en','English'],['ru','Русский'],['es','Español']];
+const langLinks=()=>`<div class="langs">${LANGS.map(([k,n])=>`<a class="${I18N.lang===k?'on':''}" onclick="setLang('${k}')">${n}</a>`).join('')}</div>`;
+function setLang(k){I18N.set(k);drawLang();const l=document.querySelector('#story .langs');if(l)l.outerHTML=langLinks();render()}
+function drawLang(){document.getElementById('lang').innerHTML=LANGS.map(([k,n])=>`<a class="${I18N.lang===k?'on':''}" onclick="setLang('${k}')">${k.toUpperCase()}</a>`).join('')}
 function splash(){
   document.getElementById('stage').classList.add('cine');G.mode='splash';
   story(`<div class="k">A GAME OF ROADS AND WINTERS</div><h2>Quests and Encounters</h2><p>Season One · Before the Snow</p>
-    <div class="btns"><a id="b_go">Begin</a><a id="b_skipintro" class="quiet">Skip the story</a><a id="b_skipall" class="quiet">Skip story and tutorial</a></div>`);
+    <div class="btns"><a id="b_go">Begin</a><a id="b_skipintro" class="quiet">Skip the story</a><a id="b_skipall" class="quiet">Skip story and tutorial</a></div>${langLinks()}`);
   waitPick([['b_go','all'],['b_skipintro','meet'],['b_skipall','none']]).then(async v=>{A.start();
     if(v==='none')G.tutorial=false;
     if(v==='all')await runStory();
@@ -908,7 +921,7 @@ const TIPS=[
   {k:'loyal',when:()=>G.want.loyal&&!G.busy,at:()=>$(`#party a[data-m="${G.want.loyal[0]}"]`),side:'below',
    text:()=>{const [m,d]=G.want.loyal;return `<b>${CO[m].short} ${d>0?'approves':'disapproves'}.</b> The hearts by each name are <b>loyalty</b>, from 0 to 5. Choices they like raise it, choices they dislike lower it. At 0 they leave the Company for good; at 5 they become <b>Devoted</b> and gain a bonus. Each person's likes and dislikes are on their sheet.`}},
   {k:'goal',when:atHome,at:()=>$('#goal'),side:'below',text:'<b>Your goal.</b> Build the walls, then a watchtower, before the first snow. The costs change every season.'},
-  {k:'res',when:atHome,at:()=>$('#res'),side:'below',text:'<b>What you have.</b> Stone and Coin pay for building. The Company eats 1 Bread a day. Wards are Aldous’s holy light.'},
+  {k:'res',when:atHome,at:()=>$('#res'),side:'below',text:'<b>What you have.</b> Stone and Coin pay for building. The Company eats 1 Bread a day, and the fields only feed you when you rest at Ravenwick. Wards are Aldous’s holy light.'},
   {k:'party',when:atHome,at:()=>$('#party'),side:'below',text:'<b>Your Company.</b> Click a name, or a figure in the painting, to see their skills, gear and loyalty. Upset them, and they may leave.'},
   {k:'setout',when:atHome,at:()=>chWith('Set out'),side:'left',text:'Head through the gate to explore. Ravenwick will be here when you come back.'},
   {k:'map',when:()=>G.scene==='crossroads'&&!G.msg,at:()=>$('#map'),side:'below',text:'<b>The route map.</b> It fills in as you go. A “?” is somewhere you can see from here.'},
@@ -975,7 +988,7 @@ function render(){
 }
 const fit=()=>document.getElementById('stage').style.setProperty('--k',Math.min(innerWidth/1280,innerHeight/720));addEventListener('resize',fit);fit();
 const h=new URLSearchParams(location.hash.slice(1));if(h.get('scene')){G.scene=h.get('scene');G.sub=h.get('sub')}if(h.get('trouble'))G.trouble=h.get('trouble');if(h.get('day'))G.day=+h.get('day');
-window.G=G;render();requestAnimationFrame(loop);
+window.G=G;I18N.start();drawLang();render();requestAnimationFrame(loop);
 const testing=h.get('scene')||h.get('bot')||h.get('end');
 if(testing){G.mode=null;G.tutorial=false;if(!h.get('scene'))G.scene='ravenwick';render();if(!h.get('still'))(async()=>{busy(true);await walkIn();busy(false);render()})()}
 else splash();
