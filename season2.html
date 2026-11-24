@@ -554,4 +554,4 @@ window.G = G; newSeason(); render(); requestAnimationFrame(loop);
 const hash = new URLSearchParams(location.hash.slice(1));
 if (hash.get('scene')) { G.scene = hash.get('scene'); show(S2.places[G.scene] ? (G.trip = {p: G.scene, days: 1, done: {}}, G.visits[G.scene] = 1, place(G.scene)) : null); }
 else splash();
-</script></body></html>
+</script><a id="seasonlink" href="index.html" style="position:fixed;left:14px;bottom:10px;z-index:20;font:italic 14px Georgia,serif;color:#e8c98a;text-decoration:none;opacity:.75;text-shadow:0 1px 1px #000,0 0 8px #000" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.75">← Season 1 · Before the Snow</a></body></html>
